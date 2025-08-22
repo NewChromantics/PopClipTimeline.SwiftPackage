@@ -67,9 +67,18 @@ constant QuadVertex quadVertexes[] =
 	
 };
 
-fragment float4 ColourFrag(ContentVertexOutput in [[stage_in]])
+struct FragColourAndDepthOut 
 {
-	float4 EdgeColour = float4(0,0,0,1);
+	float4 colour[[color(0)]];
+	float depth[[depth(any)]];
+};
+
+fragment FragColourAndDepthOut ColourFrag(ContentVertexOutput in [[stage_in]])
+{
+	float EdgeDepth = 1;
+	float BoxDepth = 0;
+	
+	FragColourAndDepthOut EdgeColour = { .colour=float4(0,0,0,1), .depth=EdgeDepth };
 	
 	//	can we do pixel perfect edges?
 	int DropShadowPx = 1;
@@ -90,7 +99,7 @@ fragment float4 ColourFrag(ContentVertexOutput in [[stage_in]])
 	float3 Colour = GetClipColour(in.clip);
 	if ( Odd )
 		Colour = mix( Colour, 0.5, 0.2 );
-	return float4( Colour, 1 );
+	return { .colour = float4( Colour, 1 ), .depth=BoxDepth };
 }
 
 float range(float Min,float Max,float Value)
