@@ -39,29 +39,33 @@ public struct Clip : Equatable
 
 public struct TimelineCoord
 {
-	var x : Int32 = 0
-	var y : Int32 = 0
+	public var x : Int32 = 0
+	public var y : Int32 = 0
 	
-	init(_ x:Int32,_ y:Int32)
+	public init(_ x:Int32,_ y:Int32)
 	{
 		self.x = x
 		self.y = y
 	}
 }
 
-public struct TimelineViewMeta
+public struct TimelineViewMeta : Equatable
 {
-	var leftColumn : Int32 = 0
-	var rowHeightPx : UInt32 = 40
-	var rowGapPx : UInt32 = 1
-	var columnWidthPx : Float = 5
-	static var minColumnWidthPx : Float {	0.1	}
-	static var maxColumnWidthPx : Float {	10	}
+	public var leftColumn : Int32 = 0
+	public var rowHeightPx : UInt32 = 40
+	public var rowGapPx : UInt32 = 1
+	public var columnWidthPx : Float = 5
+	public static var minColumnWidthPx : Float {	0.1	}
+	public static var maxColumnWidthPx : Float {	10	}
+	
+	public init()
+	{
+	}
 	
 	//	todo: make functions here that match shader pixel<>data conversion for accurate UI conversion
 	
 	//	todo: y is wrong as pixel is upside down - need view height
-	func PixelToCoord(_ x:CGFloat,_ y:CGFloat) -> TimelineCoord
+	public func PixelToCoord(_ x:CGFloat,_ y:CGFloat) -> TimelineCoord
 	{
 		//	apply zoom
 		var xf = x / CGFloat(columnWidthPx)
@@ -75,9 +79,12 @@ public struct TimelineViewMeta
 	}
 }
 
-//	gr: are little self contained render structs like this useful?
-struct ClipBoxContentRenderDescriptor
+
+
+struct ClipBoxContentRenderDescriptor : RenderCommand
 {
+	var descriptorAndState : MTLRenderDescriptorAndState!
+	
 	//	config per-shader implementation
 	static var vertexShaderName = "ClipBoxVertex"
 	var vertexBuffer_clips = 0
@@ -85,49 +92,9 @@ struct ClipBoxContentRenderDescriptor
 	var vertexBuffer_screenSize = 2
 	static var fragShaderName = "ColourFrag"
 	
-	var descriptor : MTLRenderPipelineDescriptor
-	var state : MTLRenderPipelineState
-	
-	
-	init(metalView:MTKView,shaderLibrary:MTLLibrary?=nil) throws
+	init(metalView: MTKView, shaderInBundle: Bundle) throws 
 	{
-		let shaderLibrary = try shaderLibrary ?? (try metalView.device!.makeDefaultLibrary(bundle: Bundle.module))
-		
-		self.descriptor = try Self.CreateDescriptor(metalView:metalView, shaderLibrary: shaderLibrary)
-		self.state = try metalView.device!.makeRenderPipelineState(descriptor: self.descriptor)
-	}
-	
-	
-	static private func CreateDescriptor(metalView:MTKView,shaderLibrary:MTLLibrary) throws -> MTLRenderPipelineDescriptor
-	{
-		let device = metalView.device!
-		let pipelineDescriptor = MTLRenderPipelineDescriptor()
-		
-		guard let vertexFunc = shaderLibrary.makeFunction(name: vertexShaderName) else
-		{
-			throw RuntimeError("Missing function \(vertexShaderName)")
-		}
-		guard let fragFunc = shaderLibrary.makeFunction(name: fragShaderName) else
-		{
-			throw RuntimeError("Missing function \(fragShaderName)")
-		}
-		pipelineDescriptor.vertexFunction = vertexFunc
-		pipelineDescriptor.fragmentFunction = fragFunc		
-		let attachment = pipelineDescriptor.colorAttachments[0]!
-		attachment.pixelFormat = metalView.colorPixelFormat
-		
-		
-		pipelineDescriptor.depthAttachmentPixelFormat = metalView.depthStencilPixelFormat
-		
-		attachment.isBlendingEnabled = true
-		attachment.rgbBlendOperation = .add
-		attachment.alphaBlendOperation = .add
-		attachment.sourceRGBBlendFactor = .sourceAlpha
-		attachment.sourceAlphaBlendFactor = .one
-		attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-		attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-		
-		return pipelineDescriptor
+		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
 	}
 	
 	
@@ -161,7 +128,8 @@ struct ClipBoxContentRenderDescriptor
 
 class TrackContentRenderer : ContentRenderer, ObservableObject
 {
-	@Published var viewMeta = TimelineViewMeta()
+	//	view meta is cache
+	var viewMeta = TimelineViewMeta()
 	var clipCache = [Clip]()
 	
 	var clipBoxContentRenderDescriptor : ClipBoxContentRenderDescriptor?
@@ -172,13 +140,14 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 	
 	func SetupView(metalView: MTKView) 
 	{
+		metalView.depthStencilPixelFormat = .depth32Float
 		metalView.clearColor = MTLClearColor(red: 0,green: 0,blue: 0,alpha: 0.0)
-		clipBoxContentRenderDescriptor = try? ClipBoxContentRenderDescriptor(metalView: metalView)
+		clipBoxContentRenderDescriptor = try? ClipBoxContentRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 	}
 	
 	func Draw(metalView: MTKView, size: CGSize, commandEncoder: any MTLRenderCommandEncoder) throws 
 	{
-		clipBoxContentRenderDescriptor = try clipBoxContentRenderDescriptor ?? ClipBoxContentRenderDescriptor(metalView: metalView)
+		clipBoxContentRenderDescriptor = try clipBoxContentRenderDescriptor ?? ClipBoxContentRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 		try clipBoxContentRenderDescriptor!.Render(clips: self.clipCache, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
 	}
 }
@@ -186,6 +155,8 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 //	read-only
 public struct ClipTimelineView : View 
 {
+	//	viewmeta is external, so that parent views can do Pixel<>Coord conversions - or show view zoom/range
+	@Binding var viewMeta : TimelineViewMeta
 	@StateObject var trackRenderer = TrackContentRenderer()
 	var clips : [Clip]
 
@@ -194,9 +165,10 @@ public struct ClipTimelineView : View
 
 	@State private var rightDragStart : (TimelineViewMeta,CGPoint)? = nil
 
-	public init(clips: [Clip])
+	public init(clips: [Clip],viewMeta:Binding<TimelineViewMeta>)
 	{
 		self.clips = clips
+		self._viewMeta = viewMeta
 		//	this modifies state object too early.
 		//	covered by OnAppear
 		//self.OnDataChanged()	
@@ -210,9 +182,14 @@ public struct ClipTimelineView : View
 		{
 			OnDataChanged()
 		}
+		.onChange(of: viewMeta)
+		{
+			OnViewMetaChanged()
+		}
 		.onAppear
 		{
 			OnDataChanged()
+			OnViewMetaChanged()
 		}
 		.overlay
 		{
@@ -223,13 +200,20 @@ public struct ClipTimelineView : View
 				Text("left \(trackRenderer.viewMeta.leftColumn)")
 				Spacer()
 			}
+			.allowsHitTesting(false)
 		}
 	}
 	
 	func OnDataChanged()
 	{
 		print("Clip data changed")
-		trackRenderer.clipCache = clips
+		trackRenderer.clipCache = self.clips
+	}
+	
+	func OnViewMetaChanged()
+	{
+		print("ViewMeta changed")
+		trackRenderer.viewMeta = self.viewMeta
 	}
 	
 	
@@ -268,13 +252,14 @@ func MakeFakeClips() -> [Clip]
 	return Array(0..<100).map
 	{
 		t in
-		Clip(column: t, width: (t+60)*3, row: t, type: t)
+		Clip(column: t*2, width: (t+1)*1, row: t % 10, type: t)
 	}
 }
 
 #Preview 
 {
 	@Previewable @State var clips = MakeFakeClips()
+	@Previewable @State var viewMeta = TimelineViewMeta()
 	
-	ClipTimelineView(clips: clips)
+	ClipTimelineView(clips: clips,viewMeta: $viewMeta)
 }
