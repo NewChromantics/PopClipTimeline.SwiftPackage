@@ -68,12 +68,13 @@ public struct TimelineViewMeta : Equatable
 	public var leftColumn : Int32 = 0
 	public var rowHeightPx : UInt32 = 40
 	public var rowGapPx : UInt32 = 1
-	public var columnWidthPx : Float = 5
+	public var columnWidthPx : Float
 	public static var minColumnWidthPx : Float {	0.1	}
 	public static var maxColumnWidthPx : Float {	10	}
 	
-	public init()
+	public init(columnWidthPx:Float=5)
 	{
+		self.columnWidthPx = columnWidthPx
 	}
 	
 	//	todo: make functions here that match shader pixel<>data conversion for accurate UI conversion
@@ -251,11 +252,11 @@ public struct ClipTimelineView : View
 			.mouseTracking(OnMouseStateChanged, onScroll: OnMouseScroll)
 			.onChange(of: clips)
 		{
-			OnDataChanged()
+			OnClipsChanged()
 		}
 		.onChange(of: markers)
 		{
-			OnDataChanged()
+			OnMarkersChanged()
 		}
 		.onChange(of: viewMeta)
 		{
@@ -263,7 +264,8 @@ public struct ClipTimelineView : View
 		}
 		.onAppear
 		{
-			OnDataChanged()
+			OnMarkersChanged()
+			OnClipsChanged()
 			OnViewMetaChanged()
 		}
 		.overlay
@@ -279,11 +281,16 @@ public struct ClipTimelineView : View
 		}
 	}
 	
-	func OnDataChanged()
+	func OnMarkersChanged()
+	{
+		print("Markers data changed")
+		trackRenderer.markerCache = self.markers
+	}
+	
+	func OnClipsChanged()
 	{
 		print("Clip data changed")
 		trackRenderer.clipCache = self.clips
-		trackRenderer.markerCache = self.markers
 	}
 	
 	func OnViewMetaChanged()
