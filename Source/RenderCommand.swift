@@ -10,7 +10,7 @@ public struct MTLRenderDescriptorAndState
 	var descriptor : MTLRenderPipelineDescriptor
 	var state : MTLRenderPipelineState
 	
-	init(metalView:MTKView,shaderInBundle:Bundle,vertexShaderName:String,fragShaderName:String) throws
+	public init(metalView:MTKView,shaderInBundle:Bundle,vertexShaderName:String,fragShaderName:String) throws
 	{
 		let shaderLibrary = try shaderInBundle.GetShaderLibrary(metalView: metalView)
 		self.descriptor = try Self.CreateDescriptor(metalView:metalView, shaderLibrary: shaderLibrary, vertexShaderName: vertexShaderName, fragShaderName: fragShaderName)

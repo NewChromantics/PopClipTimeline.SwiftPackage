@@ -10,6 +10,12 @@ struct Clip
 	uint32_t type;
 };
 
+struct Marker
+{
+	uint32_t column;
+	uint32_t type;
+};
+
 struct TimelineViewMeta
 {
 	//	state
@@ -45,7 +51,8 @@ float3 GetClipColour(Clip content)
 	float hi = 0.9;
 	float lo = 0.3;
 	
-	float3 DebugColours[6] =
+	const int DebugColourCount = 6;
+	float3 DebugColours[DebugColourCount] =
 	{
 		float3(hi,lo,lo),
 		float3(hi,hi,lo),
@@ -54,7 +61,18 @@ float3 GetClipColour(Clip content)
 		float3(lo,lo,hi),
 		float3(hi,lo,hi),
 	};
-	return DebugColours[content.type%6];
+	return DebugColours[content.type%DebugColourCount];
+}
+
+
+float3 GetMarkerColour(Clip content)
+{
+	const int DebugColourCount = 1;
+	float3 DebugColours[DebugColourCount] =
+	{
+		float3(1,1,1),
+	};
+	return DebugColours[content.type%DebugColourCount];
 }
 
 constant QuadVertex quadVertexes[] = 
@@ -102,6 +120,16 @@ fragment FragColourAndDepthOut ColourFrag(ContentVertexOutput in [[stage_in]])
 	return { .colour = float4( Colour, 1 ), .depth=BoxDepth };
 }
 
+
+
+fragment float4 MarkerFrag(ContentVertexOutput in [[stage_in]])
+{
+	float3 Colour = GetMarkerColour(in.clip);
+	return float4( Colour, 0.8 );
+
+}
+
+
 float range(float Min,float Max,float Value)
 {
 	return (Value-Min) / (Max-Min);
@@ -131,6 +159,38 @@ float4 ScreenPxToClip(float2 px,float2 ScreenSize)
 	return float4( uv, 0, 1 );
 }
 
+
+ContentVertexOutput ClipBoxVertexImpl( uint vertexId,
+										Clip clip,
+									  int RowsCovered,
+										 constant TimelineViewMeta& timelineViewMeta,
+										 constant float2& ScreenSize
+										 ) 
+{
+	ContentVertexOutput out;
+	QuadVertex vert = quadVertexes[vertexId];
+	
+	//	make pixel box
+	float left = clip.column;
+	float right = left + (clip.width);
+	
+	//	get coords
+	float coordX = mix( left, right, vert.x );
+	float coordY = clip.row;
+	
+	out.screenPosition = CoordToScreenPx( float2(coordX,coordY), timelineViewMeta );
+	out.screenPosition.y += vert.y * RowsCovered * timelineViewMeta.rowHeightPx;
+	
+	out.clipPosition = ScreenPxToClip( out.screenPosition, ScreenSize );
+	out.uv = float2(vert.x,vert.y);
+	out.boxSizePx = float2( clip.width * timelineViewMeta.columnWidthPx, timelineViewMeta.rowHeightPx );
+	out.boxPx = out.uv * out.boxSizePx;
+	out.coordX = coordX;
+	out.clip = clip;
+	
+	return out;
+}
+
 vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 												uint instanceId [[instance_id]],
 												constant Clip* clips[[buffer(0)]],
@@ -141,7 +201,11 @@ vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 	ContentVertexOutput out;
 	QuadVertex vert = quadVertexes[vertexId];
 	auto clip = clips[instanceId];
-
+	int RowsCovered = 1;
+	
+	return ClipBoxVertexImpl( vertexId, clip, RowsCovered, timelineViewMeta, ScreenSize );
+	/*
+	
 	//	make pixel box
 	float left = clip.column;
 	float right = left + (clip.width);
@@ -160,5 +224,26 @@ vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 	out.coordX = coordX;
 	out.clip = clip;
 	
-	return out;
+	return out;*/
+}
+
+
+vertex ContentVertexOutput MarkerVertex( uint vertexId [[vertex_id]],
+										 uint instanceId [[instance_id]],
+										 constant Marker* markers[[buffer(0)]],
+										 constant TimelineViewMeta& timelineViewMeta[[buffer(1)]],
+										 constant float2& ScreenSize[[buffer(2)]]
+										 ) 
+{
+	ContentVertexOutput out;
+	QuadVertex vert = quadVertexes[vertexId];
+	auto marker = markers[instanceId];
+	//auto clip = clips[instanceId];
+	Clip clip;
+	clip.column = marker.column;
+	clip.width = 1;
+	clip.row = 0;
+	int RowsCovered = 100;
+
+	return ClipBoxVertexImpl( vertexId, clip, RowsCovered, timelineViewMeta, ScreenSize );
 }

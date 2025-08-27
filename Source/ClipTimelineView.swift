@@ -21,6 +21,20 @@ public struct ClipTimelineError: LocalizedError
 
 
 //	match shader
+public struct Marker : Equatable
+{
+	var column : UInt32
+	var type : UInt32
+	
+	public init(column: UInt32,type: UInt32) 
+	{
+		self.column = column
+		self.type = type
+	}
+}
+
+
+//	match shader
 public struct Clip : Equatable
 {
 	var column : UInt32
@@ -63,6 +77,11 @@ public struct TimelineViewMeta : Equatable
 	}
 	
 	//	todo: make functions here that match shader pixel<>data conversion for accurate UI conversion
+
+	public func PixelToCoord(_ pos:CGPoint) -> TimelineCoord
+	{
+		return PixelToCoord( pos.x, pos.y )
+	}
 	
 	//	todo: y is wrong as pixel is upside down - need view height
 	public func PixelToCoord(_ x:CGFloat,_ y:CGFloat) -> TimelineCoord
@@ -126,13 +145,61 @@ struct ClipBoxContentRenderDescriptor : RenderCommand
 }
 
 
+struct MarkerRenderDescriptor : RenderCommand
+{
+	var descriptorAndState : MTLRenderDescriptorAndState!
+	
+	//	config per-shader implementation
+	static var vertexShaderName = "MarkerVertex"
+	var vertexBuffer_markers = 0
+	var vertexBuffer_timelineViewMeta = 1
+	var vertexBuffer_screenSize = 2
+	static var fragShaderName = "MarkerFrag"
+	
+	init(metalView: MTKView, shaderInBundle: Bundle) throws 
+	{
+		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
+	}
+	
+	
+	func Render(markers:[Marker],trackViewMeta:TimelineViewMeta,metalView: MTKView,viewportSize:CGSize,commandEncoder: any MTLRenderCommandEncoder) throws
+	{
+		let geometryPipelineState = self.state
+		
+		commandEncoder.setRenderPipelineState( geometryPipelineState )
+		
+		//	viewport in pixel space
+		//actor.enableDepthReadWrite(commandEncoder)
+		
+		var markers = markers
+		commandEncoder.setVertexBytes(&markers, length: MemoryLayout<Marker>.stride * markers.count, index:self.vertexBuffer_markers )
+		
+		var trackViewMeta = trackViewMeta
+		commandEncoder.setVertexBytes(&trackViewMeta, index:self.vertexBuffer_timelineViewMeta )
+		
+		var screenSize = [Float(viewportSize.width),Float(viewportSize.height)]
+		commandEncoder.setVertexBytes(&screenSize, length: MemoryLayout<Float>.stride*2, index:self.vertexBuffer_screenSize )
+		
+		let instanceCount = markers.count
+		if instanceCount > 0
+		{
+			commandEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instanceCount )
+		}
+	}
+	
+}
+
+
+
 class TrackContentRenderer : ContentRenderer, ObservableObject
 {
 	//	view meta is cache
 	var viewMeta = TimelineViewMeta()
 	var clipCache = [Clip]()
+	var markerCache = [Marker]()
 	
 	var clipBoxContentRenderDescriptor : ClipBoxContentRenderDescriptor?
+	var markerRenderDescriptor : MarkerRenderDescriptor?
 	
 	init()
 	{
@@ -142,13 +209,15 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 	{
 		metalView.depthStencilPixelFormat = .depth32Float
 		metalView.clearColor = MTLClearColor(red: 0,green: 0,blue: 0,alpha: 0.0)
-		clipBoxContentRenderDescriptor = try? ClipBoxContentRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 	}
 	
 	func Draw(metalView: MTKView, size: CGSize, commandEncoder: any MTLRenderCommandEncoder) throws 
 	{
 		clipBoxContentRenderDescriptor = try clipBoxContentRenderDescriptor ?? ClipBoxContentRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 		try clipBoxContentRenderDescriptor!.Render(clips: self.clipCache, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
+
+		markerRenderDescriptor = try markerRenderDescriptor ?? MarkerRenderDescriptor(metalView: metalView, shaderInBundle: .module)
+		try markerRenderDescriptor!.Render(markers: self.markerCache, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
 	}
 }
 
@@ -159,15 +228,17 @@ public struct ClipTimelineView : View
 	@Binding var viewMeta : TimelineViewMeta
 	@StateObject var trackRenderer = TrackContentRenderer()
 	var clips : [Clip]
+	var markers : [Marker]
 
 	//	make binding for user?
 	@State var hoverCoord = TimelineCoord(0,0)
 
 	@State private var rightDragStart : (TimelineViewMeta,CGPoint)? = nil
 
-	public init(clips: [Clip],viewMeta:Binding<TimelineViewMeta>)
+	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>)
 	{
 		self.clips = clips
+		self.markers = markers
 		self._viewMeta = viewMeta
 		//	this modifies state object too early.
 		//	covered by OnAppear
@@ -179,6 +250,10 @@ public struct ClipTimelineView : View
 		MetalView(contentRenderer: trackRenderer,showFps: false)
 			.mouseTracking(OnMouseStateChanged, onScroll: OnMouseScroll)
 			.onChange(of: clips)
+		{
+			OnDataChanged()
+		}
+		.onChange(of: markers)
 		{
 			OnDataChanged()
 		}
@@ -208,6 +283,7 @@ public struct ClipTimelineView : View
 	{
 		print("Clip data changed")
 		trackRenderer.clipCache = self.clips
+		trackRenderer.markerCache = self.markers
 	}
 	
 	func OnViewMetaChanged()
@@ -256,10 +332,21 @@ func MakeFakeClips() -> [Clip]
 	}
 }
 
+func MakeFakeMarkers() -> [Marker]
+{
+	return Array(0..<100).map
+	{
+		t in
+		Marker(column: t * 3, type: t)
+	}
+}
+
+
 #Preview 
 {
 	@Previewable @State var clips = MakeFakeClips()
+	@Previewable @State var markers = MakeFakeMarkers()
 	@Previewable @State var viewMeta = TimelineViewMeta()
 	
-	ClipTimelineView(clips: clips,viewMeta: $viewMeta)
+	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta)
 }
