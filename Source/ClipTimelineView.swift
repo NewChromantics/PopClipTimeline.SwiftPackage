@@ -347,13 +347,13 @@ public struct ClipTimelineView : View
 		//	drag view around
 		if mouseState.rightDown
 		{
-			let view = self.trackRenderer.viewMeta
-			rightDragStart = rightDragStart ?? (self.trackRenderer.viewMeta,mouseState.position)
-			let startcoord = view.PixelToCoord(rightDragStart!.1.x,0)
-			let nowcoord = view.PixelToCoord(mouseState.position.x,0)
+			rightDragStart = rightDragStart ?? (viewMeta,mouseState.position)
+			let startcoord = viewMeta.PixelToCoord(rightDragStart!.1.x,0)
+			let nowcoord = viewMeta.PixelToCoord(mouseState.position.x,0)
 			let changex = startcoord.x - nowcoord.x
 			//let changex = (rightDragStart!.1.x - mouseState.position.x) / CGFloat(self.trackRenderer.viewMeta.columnWidthPx) 
-			self.trackRenderer.viewMeta.leftColumn = rightDragStart!.0.leftColumn + changex
+			//self.trackRenderer.viewMeta.leftColumn = rightDragStart!.0.leftColumn + changex
+			viewMeta.leftColumn = rightDragStart!.0.leftColumn + changex
 		}
 		else
 		{
