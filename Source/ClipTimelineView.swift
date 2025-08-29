@@ -231,7 +231,10 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 	{
 		metalView.depthStencilPixelFormat = .depth32Float
 		metalView.clearColor = MTLClearColor(red: 0,green: 0,blue: 0,alpha: 0.0)
-		lastRenderSize = metalView.drawableSize
+		DispatchQueue.main.async
+		{
+			self.lastRenderSize = metalView.drawableSize
+		}
 	}
 	
 	func Draw(metalView: MTKView, size: CGSize, commandEncoder: any MTLRenderCommandEncoder) throws 
