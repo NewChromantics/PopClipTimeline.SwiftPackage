@@ -5,6 +5,15 @@ import MouseTracking
 import PopCommon
 
 
+public typealias ClipId = UInt32
+
+extension ClipId
+{
+	init()
+	{
+		self = UInt32( abs(UUID().hashValue) % 100000 )
+	}
+}
 
 public struct ClipTimelineError: LocalizedError
 {
@@ -23,10 +32,10 @@ public struct ClipTimelineError: LocalizedError
 //	match shader
 public struct Marker : Equatable
 {
-	var column : UInt32
+	var column : Int32
 	var type : UInt32
 	
-	public init(column: UInt32,type: UInt32) 
+	public init(column: Int32,type: UInt32) 
 	{
 		self.column = column
 		self.type = type
@@ -35,15 +44,18 @@ public struct Marker : Equatable
 
 
 //	match shader
-public struct Clip : Equatable
+public struct Clip : Equatable, Identifiable
 {
 	var column : UInt32
 	var width : UInt32
+	var lastColumn : UInt32	{	column + (width-1)	}
 	var row : UInt32
 	var type : UInt32	//	selected etc
+	public var id : ClipId
 	
-	public init(column: UInt32, width: UInt32, row: UInt32, type: UInt32) 
+	public init(id:ClipId,column: UInt32, width: UInt32, row: UInt32, type: UInt32) 
 	{
+		self.id = id
 		self.column = column
 		self.width = width
 		self.row = row
@@ -69,6 +81,10 @@ public struct TimelineViewMeta : Equatable
 	public var rowHeightPx : UInt32 = 40
 	public var rowGapPx : UInt32 = 1
 	public var columnWidthPx : Float
+	
+	//	this is a cache, but we need it to flip coords
+	public var lastViewSize : CGSize = .zero
+	
 	public static var minColumnWidthPx : Float {	0.1	}
 	public static var maxColumnWidthPx : Float {	10	}
 	
@@ -87,13 +103,16 @@ public struct TimelineViewMeta : Equatable
 	//	todo: y is wrong as pixel is upside down - need view height
 	public func PixelToCoord(_ x:CGFloat,_ y:CGFloat) -> TimelineCoord
 	{
+		//	flip coords
+		var y = y
+		y = lastViewSize.height - y
+		
 		//	apply zoom
 		var xf = x / CGFloat(columnWidthPx)
 		let yf = y / CGFloat(rowHeightPx+rowGapPx)
 		
 		//	apply scroll
 		xf += CGFloat(leftColumn)
-		
 		
 		return TimelineCoord( Int32(xf), Int32(yf) )
 	}
@@ -194,6 +213,8 @@ struct MarkerRenderDescriptor : RenderCommand
 
 class TrackContentRenderer : ContentRenderer, ObservableObject
 {
+	@Published var lastRenderSize : CGSize = .zero
+	
 	//	view meta is cache
 	var viewMeta = TimelineViewMeta()
 	var clipCache = [Clip]()
@@ -210,10 +231,13 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 	{
 		metalView.depthStencilPixelFormat = .depth32Float
 		metalView.clearColor = MTLClearColor(red: 0,green: 0,blue: 0,alpha: 0.0)
+		lastRenderSize = metalView.drawableSize
 	}
 	
 	func Draw(metalView: MTKView, size: CGSize, commandEncoder: any MTLRenderCommandEncoder) throws 
 	{
+		lastRenderSize = size
+
 		clipBoxContentRenderDescriptor = try clipBoxContentRenderDescriptor ?? ClipBoxContentRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 		try clipBoxContentRenderDescriptor!.Render(clips: self.clipCache, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
 
@@ -228,19 +252,26 @@ public struct ClipTimelineView : View
 	//	viewmeta is external, so that parent views can do Pixel<>Coord conversions - or show view zoom/range
 	@Binding var viewMeta : TimelineViewMeta
 	@StateObject var trackRenderer = TrackContentRenderer()
+	@Binding var selectedClip : ClipId?
+	@Binding var hoveredClip : ClipId?
 	var clips : [Clip]
 	var markers : [Marker]
+	var renderHeight : CGFloat	{	CGFloat(GetLargestClipRow()) * CGFloat((viewMeta.rowHeightPx+viewMeta.rowGapPx))	}
 
 	//	make binding for user?
 	@State var hoverCoord = TimelineCoord(0,0)
 
 	@State private var rightDragStart : (TimelineViewMeta,CGPoint)? = nil
+	@State private var leftDragStart : (TimelineViewMeta,CGPoint)? = nil
 
-	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>)
+	
+	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>)
 	{
 		self.clips = clips
 		self.markers = markers
 		self._viewMeta = viewMeta
+		self._selectedClip = selectedClip
+		self._hoveredClip = hoveredClip
 		//	this modifies state object too early.
 		//	covered by OnAppear
 		//self.OnDataChanged()	
@@ -250,34 +281,38 @@ public struct ClipTimelineView : View
 	{
 		MetalView(contentRenderer: trackRenderer,showFps: false)
 			.mouseTracking(OnMouseStateChanged, onScroll: OnMouseScroll)
-			.onChange(of: clips)
-		{
-			OnClipsChanged()
-		}
-		.onChange(of: markers)
-		{
-			OnMarkersChanged()
-		}
-		.onChange(of: viewMeta)
-		{
-			OnViewMetaChanged()
-		}
-		.onAppear
-		{
-			OnMarkersChanged()
-			OnClipsChanged()
-			OnViewMetaChanged()
-		}
-		.overlay
-		{
-			VStack(alignment: .leading)
+			.onChange(of: clips, OnClipsChanged)
+			.onChange(of: markers, OnMarkersChanged)
+			.onChange(of: selectedClip, OnSelectedClipChanged)
+			.onChange(of: viewMeta, OnViewMetaChanged)
+			.onAppear
 			{
-				Text("Hover (\(hoverCoord.x),\(hoverCoord.y))")
-				Text("zoom \(trackRenderer.viewMeta.columnWidthPx)")
-				Text("left \(trackRenderer.viewMeta.leftColumn)")
-				Spacer()
+				OnMarkersChanged()
+				OnClipsChanged()
+				OnSelectedClipChanged()
+				OnViewMetaChanged()
 			}
-			.allowsHitTesting(false)
+			.overlay
+			{
+				/*
+				VStack(alignment: .leading)
+				{
+					Text("clips x\(clips.count)")
+					Text("Hover (\(hoverCoord.x),\(hoverCoord.y))")
+					Text("zoom \(trackRenderer.viewMeta.columnWidthPx)")
+					Text("left \(trackRenderer.viewMeta.leftColumn)")
+					Spacer()
+				}
+				.foregroundStyle(.white)
+				.background(.blue.opacity(0.5))
+				.allowsHitTesting(false)
+				 */
+			}
+			.frame(minHeight: renderHeight)
+			.onChange(of: trackRenderer.lastRenderSize)
+		{
+			newSize in
+			self.viewMeta.lastViewSize = newSize
 		}
 	}
 	
@@ -287,9 +322,13 @@ public struct ClipTimelineView : View
 		trackRenderer.markerCache = self.markers
 	}
 	
+	func OnSelectedClipChanged()
+	{
+	}
+	
 	func OnClipsChanged()
 	{
-		print("Clip data changed")
+		print("Clip data changed x\(self.clips.count)")
 		trackRenderer.clipCache = self.clips
 	}
 	
@@ -318,7 +357,36 @@ public struct ClipTimelineView : View
 			rightDragStart = nil
 		}
 		
+		if leftDragStart == nil && mouseState.leftDown
+		{
+			//	first click
+			let view = self.trackRenderer.viewMeta
+			let clickCoord = view.PixelToCoord(mouseState.position)
+			print("Click \(clickCoord)")
+			let clickedClip = self.GetClipAt(clickCoord)
+			if let clickedClip
+			{
+				self.selectedClip = clickedClip.id
+			}
+			else
+			{
+				self.selectedClip = nil
+			}
+			leftDragStart = (self.trackRenderer.viewMeta,mouseState.position)
+		}
+		else if mouseState.leftDown
+		{
+			//	dragging
+		}
+		else if leftDragStart != nil
+		{
+			//	dropped
+			print("Dropped")
+			leftDragStart = nil
+		}
+		
 		self.hoverCoord = self.trackRenderer.viewMeta.PixelToCoord(mouseState.position.x, mouseState.position.y)
+		self.hoveredClip = self.GetClipAt(self.hoverCoord)?.id
 	}
 	
 	func OnMouseScroll(_ scroll:MouseScrollEvent)
@@ -328,23 +396,47 @@ public struct ClipTimelineView : View
 		columnWidthPx = clamp( columnWidthPx, min:TimelineViewMeta.minColumnWidthPx, max:TimelineViewMeta.maxColumnWidthPx )
 		trackRenderer.viewMeta.columnWidthPx = columnWidthPx
 	}
+	
+	func GetClipAt(_ timelineCoord:TimelineCoord) -> Clip?
+	{
+		//	gr: bug here where the self.clips are out of date
+		//		Im presuming this is because an OLD mousehandler on the view
+		//		is not being freed and pointing at an old view
+		let RendererCachedClips = self.trackRenderer.clipCache
+		let clips = RendererCachedClips
+		return clips.first(where:
+		{
+			$0.row == timelineCoord.y &&
+			timelineCoord.x >= $0.column  && timelineCoord.x <= $0.lastColumn 
+		})
+	}
+	
+	func GetLargestClipRow() -> UInt32
+	{
+		var rowMax : UInt32 = 0
+		for clip in clips
+		{
+			rowMax = Swift.max( rowMax, clip.row )
+		}
+		return rowMax
+	}
 }
 
 func MakeFakeClips() -> [Clip]
 {
-	return Array(0..<100).map
+	return Array(0..<6).map
 	{
 		t in
-		Clip(column: t*2, width: (t+1)*1, row: t % 10, type: t)
+		Clip(id:ClipId(), column: t*10, width: 20, row: t % 5, type: t)
 	}
 }
 
 func MakeFakeMarkers() -> [Marker]
 {
-	return Array(0..<100).map
+	return Array(0..<5).map
 	{
 		t in
-		Marker(column: t * 3, type: t)
+		Marker(column: 4 + Int32(t) * 10, type: t)
 	}
 }
 
@@ -354,6 +446,27 @@ func MakeFakeMarkers() -> [Marker]
 	@Previewable @State var clips = MakeFakeClips()
 	@Previewable @State var markers = MakeFakeMarkers()
 	@Previewable @State var viewMeta = TimelineViewMeta()
+	@Previewable @State var selectedClip : ClipId? 
+	@Previewable @State var hoveredClip : ClipId? 
 	
-	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta)
+	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta,selectedClip: $selectedClip,hoveredClip: $hoveredClip)
+		.overlay
+	{
+		VStack
+		{
+			let selectedName = selectedClip.map{ "\($0)" } ?? "none"
+			let hoveredName = hoveredClip.map{ "\($0)" } ?? "none"
+			Text("Selected clip: \(selectedName)")
+				.foregroundStyle(.white)
+				.padding(5)
+				.background(.black)
+			Text("hovered clip: \(hoveredName)")
+				.foregroundStyle(.white)
+				.padding(5)
+				.background(.black)
+		}
+		.allowsHitTesting(false)
+		.frame(maxWidth: .infinity,maxHeight: .infinity,alignment: .topLeading)
+	}
+	//.frame(maxWidth:300,maxHeight: 300)
 }

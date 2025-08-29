@@ -8,6 +8,7 @@ struct Clip
 	uint32_t width;
 	uint32_t row;
 	uint32_t type;
+	uint32_t id;
 };
 
 struct Marker
@@ -172,7 +173,7 @@ ContentVertexOutput ClipBoxVertexImpl( uint vertexId,
 	
 	//	make pixel box
 	float left = clip.column;
-	float right = left + (clip.width);
+	float right = left + max(uint32_t(1),clip.width);	//	clips with 0 duration need to be visible for at least one unit
 	
 	//	get coords
 	float coordX = mix( left, right, vert.x );
