@@ -323,7 +323,7 @@ public struct ClipTimelineView : View
 	
 	func OnMarkersChanged()
 	{
-		print("Markers data changed")
+		//print("Markers data changed")
 		trackRenderer.markerCache = self.markers
 	}
 	
@@ -339,7 +339,7 @@ public struct ClipTimelineView : View
 	
 	func OnViewMetaChanged()
 	{
-		print("ViewMeta changed")
+		//print("ViewMeta changed")
 		trackRenderer.viewMeta = self.viewMeta
 	}
 	
@@ -365,8 +365,7 @@ public struct ClipTimelineView : View
 		if leftDragStart == nil && mouseState.leftDown
 		{
 			//	first click
-			let view = self.viewMeta
-			let clickCoord = view.PixelToCoord(mouseState.position)
+			let clickCoord = viewMeta.PixelToCoord(mouseState.position)
 			print("Click \(clickCoord)")
 			let clickedClip = self.GetClipAt(clickCoord)
 			if let clickedClip
@@ -378,13 +377,12 @@ public struct ClipTimelineView : View
 				self.selectedClip = nil
 				self.onClickedEmptySpace(clickCoord)
 			}
-			leftDragStart = (self.trackRenderer.viewMeta,mouseState.position)
+			leftDragStart = (viewMeta,mouseState.position)
 		}
 		else if mouseState.leftDown
 		{
 			//	dragging
-			let view = self.viewMeta
-			let clickCoord = view.PixelToCoord(mouseState.position)
+			let clickCoord = viewMeta.PixelToCoord(mouseState.position)
 			self.onClickedEmptySpace(clickCoord)
 		}
 		else if leftDragStart != nil
@@ -394,16 +392,16 @@ public struct ClipTimelineView : View
 			leftDragStart = nil
 		}
 		
-		self.hoverCoord = self.trackRenderer.viewMeta.PixelToCoord(mouseState.position.x, mouseState.position.y)
+		self.hoverCoord = self.viewMeta.PixelToCoord(mouseState.position.x, mouseState.position.y)
 		self.hoveredClip = self.GetClipAt(self.hoverCoord)?.id
 	}
 	
 	func OnMouseScroll(_ scroll:MouseScrollEvent)
 	{
 		let zoom = Float(scroll.scrollDelta) * 0.1
-		var columnWidthPx = trackRenderer.viewMeta.columnWidthPx + zoom
+		var columnWidthPx = viewMeta.columnWidthPx + zoom
 		columnWidthPx = clamp( columnWidthPx, min:TimelineViewMeta.minColumnWidthPx, max:TimelineViewMeta.maxColumnWidthPx )
-		trackRenderer.viewMeta.columnWidthPx = columnWidthPx
+		viewMeta.columnWidthPx = columnWidthPx
 	}
 	
 	func GetClipAt(_ timelineCoord:TimelineCoord) -> Clip?
