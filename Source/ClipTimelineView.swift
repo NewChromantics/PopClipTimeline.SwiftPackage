@@ -267,14 +267,16 @@ public struct ClipTimelineView : View
 	@State private var rightDragStart : (TimelineViewMeta,CGPoint)? = nil
 	@State private var leftDragStart : (TimelineViewMeta,CGPoint)? = nil
 
+	var onClickedEmptySpace : (TimelineCoord)->Void
 	
-	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>)
+	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>,onClickedEmptySpace:@escaping(TimelineCoord)->Void)
 	{
 		self.clips = clips
 		self.markers = markers
 		self._viewMeta = viewMeta
 		self._selectedClip = selectedClip
 		self._hoveredClip = hoveredClip
+		self.onClickedEmptySpace = onClickedEmptySpace
 		//	this modifies state object too early.
 		//	covered by OnAppear
 		//self.OnDataChanged()	
@@ -363,7 +365,7 @@ public struct ClipTimelineView : View
 		if leftDragStart == nil && mouseState.leftDown
 		{
 			//	first click
-			let view = self.trackRenderer.viewMeta
+			let view = self.viewMeta
 			let clickCoord = view.PixelToCoord(mouseState.position)
 			print("Click \(clickCoord)")
 			let clickedClip = self.GetClipAt(clickCoord)
@@ -374,12 +376,16 @@ public struct ClipTimelineView : View
 			else
 			{
 				self.selectedClip = nil
+				self.onClickedEmptySpace(clickCoord)
 			}
 			leftDragStart = (self.trackRenderer.viewMeta,mouseState.position)
 		}
 		else if mouseState.leftDown
 		{
 			//	dragging
+			let view = self.viewMeta
+			let clickCoord = view.PixelToCoord(mouseState.position)
+			self.onClickedEmptySpace(clickCoord)
 		}
 		else if leftDragStart != nil
 		{
@@ -453,6 +459,9 @@ func MakeFakeMarkers() -> [Marker]
 	@Previewable @State var hoveredClip : ClipId? 
 	
 	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta,selectedClip: $selectedClip,hoveredClip: $hoveredClip)
+	{
+		_ in
+	}
 		.overlay
 	{
 		VStack
