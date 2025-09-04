@@ -47,7 +47,7 @@ struct ContentVertexOutput
 };
 
 
-float3 GetClipColour(Clip content)
+float3 GetDebugColour(int Value)
 {
 	float hi = 0.9;
 	float lo = 0.3;
@@ -62,7 +62,14 @@ float3 GetClipColour(Clip content)
 		float3(lo,lo,hi),
 		float3(hi,lo,hi),
 	};
-	return DebugColours[content.type%DebugColourCount];
+	return DebugColours[Value%DebugColourCount];
+}
+
+
+
+float3 GetClipColour(Clip content)
+{
+	return GetDebugColour(content.type);
 }
 
 

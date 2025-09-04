@@ -431,11 +431,14 @@ public struct ClipTimelineView : View
 
 func MakeFakeClips() -> [Clip]
 {
-	return Array(0..<6).map
+	var clips = Array(0..<6).map
 	{
 		t in
 		Clip(id:ClipId(), column: t*10, width: 20, row: t % 5, type: t)
 	}
+	let longClip = Clip(id: ClipId(), column: 3, width: 20000, row:6, type:99)
+	clips.append(longClip)
+	return clips
 }
 
 func MakeFakeMarkers() -> [Marker]
@@ -451,14 +454,17 @@ func MakeFakeMarkers() -> [Marker]
 #Preview 
 {
 	@Previewable @State var clips = MakeFakeClips()
-	@Previewable @State var markers = MakeFakeMarkers()
 	@Previewable @State var viewMeta = TimelineViewMeta()
 	@Previewable @State var selectedClip : ClipId? 
 	@Previewable @State var hoveredClip : ClipId? 
+	@Previewable @State var timeMarker = Marker(column: 10, type: 0)
+	//@Previewable @State var markers = MakeFakeMarkers()
+	var markers : [Marker] { [timeMarker]	}
 	
 	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta,selectedClip: $selectedClip,hoveredClip: $hoveredClip)
 	{
-		_ in
+		clickCoord in
+		timeMarker.column = clickCoord.x 
 	}
 		.overlay
 	{
