@@ -127,6 +127,12 @@ struct FragColourAndDepthOut
 
 fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]])
 {
+	auto Colour = float4(1,1,1,1);
+	
+	if ( in.boxSizePx.x < 4 )
+	{
+		return Colour;
+	}
 	/*
 	if ( any(IsPixelEdge( in.boxPx, float4(0,0,in.boxSizePx+float2(1,0)) ) ) )
 		discard_fragment();
@@ -141,7 +147,7 @@ fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]])
 	{
 		discard_fragment();
 	}
-	return float4(1,1,1,1);
+	return Colour;
 }
 
 
@@ -216,6 +222,7 @@ float4 ScreenPxToClip(float2 px,float2 ScreenSize)
 
 ContentVertexOutput ClipBoxVertexImpl( uint vertexId,
 										Clip clip,
+									  int MinPixelWidth,
 									  int RowsCovered,
 										 constant TimelineViewMeta& timelineViewMeta,
 										 constant float2& ScreenSize
@@ -256,8 +263,9 @@ vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 	QuadVertex vert = quadVertexes[vertexId];
 	auto clip = clips[instanceId];
 	int RowsCovered = 1;
+	int MinPixelWidth = 0;
 	
-	return ClipBoxVertexImpl( vertexId, clip, RowsCovered, timelineViewMeta, ScreenSize );
+	return ClipBoxVertexImpl( vertexId, clip, MinPixelWidth, RowsCovered, timelineViewMeta, ScreenSize );
 }
 
 
@@ -280,8 +288,10 @@ vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
 	NotchClip.row = clip.row;
 	NotchClip.type = Notch.type;
 	NotchClip.id = clip.id;
+
+	int MinPixelWidth = 1;
 	
-	return ClipBoxVertexImpl( vertexId, NotchClip, RowsCovered, timelineViewMeta, ScreenSize );
+	return ClipBoxVertexImpl( vertexId, NotchClip, MinPixelWidth, RowsCovered, timelineViewMeta, ScreenSize );
 }
 
 vertex ContentVertexOutput MarkerVertex( uint vertexId [[vertex_id]],
@@ -300,6 +310,7 @@ vertex ContentVertexOutput MarkerVertex( uint vertexId [[vertex_id]],
 	clip.width = 1;
 	clip.row = 0;
 	int RowsCovered = 100;
-
-	return ClipBoxVertexImpl( vertexId, clip, RowsCovered, timelineViewMeta, ScreenSize );
+	int MinPixelWidth = 1;
+	
+	return ClipBoxVertexImpl( vertexId, clip, MinPixelWidth, RowsCovered, timelineViewMeta, ScreenSize );
 }
