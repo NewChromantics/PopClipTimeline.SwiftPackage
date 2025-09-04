@@ -48,7 +48,7 @@ public struct Clip : Equatable, Identifiable
 {
 	var column : UInt32
 	var width : UInt32
-	var lastColumn : UInt32	{	column + (width-1)	}
+	var lastColumn : UInt32	{	column + (max(1,width)-1)	}
 	var row : UInt32
 	var type : UInt32	//	selected etc
 	public var id : ClipId
