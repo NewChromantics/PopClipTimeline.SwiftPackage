@@ -42,6 +42,19 @@ public struct Marker : Equatable
 	}
 }
 
+//	match shader
+public struct Notch : Equatable
+{
+	var frame : Int32
+	var type : UInt32
+	
+	public init(frame: Int32,type: UInt32) 
+	{
+		self.frame = frame
+		self.type = type
+	}
+}
+
 
 //	match shader
 public struct Clip : Equatable, Identifiable
@@ -120,6 +133,55 @@ public struct TimelineViewMeta : Equatable
 
 
 
+
+struct ClipNotchRenderDescriptor : RenderCommand
+{
+	var descriptorAndState : MTLRenderDescriptorAndState!
+	
+	//	config per-shader implementation
+	static var vertexShaderName = "NotchVertex"
+	var vertexBuffer_notchs = 0
+	var vertexBuffer_clip = 1
+	var vertexBuffer_timelineViewMeta = 2
+	var vertexBuffer_screenSize = 3
+	static var fragShaderName = "ClipNotchFrag"
+	
+	init(metalView: MTKView, shaderInBundle: Bundle) throws 
+	{
+		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
+	}
+	
+	
+	func Render(notches:[Notch],clip:Clip,trackViewMeta:TimelineViewMeta,metalView: MTKView,viewportSize:CGSize,commandEncoder: any MTLRenderCommandEncoder) throws
+	{
+		if notches.isEmpty
+		{
+			return
+		}
+		let geometryPipelineState = self.state
+		
+		commandEncoder.setRenderPipelineState( geometryPipelineState )
+		
+		//	viewport in pixel space
+		//actor.enableDepthReadWrite(commandEncoder)
+		
+		var notches = notches
+		var clip = clip
+		commandEncoder.setVertexBytes( &notches, length: MemoryLayout<Notch>.stride * notches.count, index:self.vertexBuffer_notchs )
+		commandEncoder.setVertexBytes( &clip, index:self.vertexBuffer_clip )
+		
+		var trackViewMeta = trackViewMeta
+		commandEncoder.setVertexBytes(&trackViewMeta, index:self.vertexBuffer_timelineViewMeta )
+		
+		var screenSize = [Float(viewportSize.width),Float(viewportSize.height)]
+		commandEncoder.setVertexBytes(&screenSize, length: MemoryLayout<Float>.stride*2, index:self.vertexBuffer_screenSize )
+		
+		commandEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: notches.count )
+	}
+	
+}
+
+
 struct ClipBoxContentRenderDescriptor : RenderCommand
 {
 	var descriptorAndState : MTLRenderDescriptorAndState!
@@ -129,10 +191,11 @@ struct ClipBoxContentRenderDescriptor : RenderCommand
 	var vertexBuffer_clips = 0
 	var vertexBuffer_timelineViewMeta = 1
 	var vertexBuffer_screenSize = 2
-	static var fragShaderName = "ColourFrag"
+	static var fragShaderName = "ClipBoxFrag"
 	
 	init(metalView: MTKView, shaderInBundle: Bundle) throws 
 	{
+		print("ClipBoxContentRenderDescriptor init")
 		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
 	}
 	
@@ -221,10 +284,14 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 	var markerCache = [Marker]()
 	
 	var clipBoxContentRenderDescriptor : ClipBoxContentRenderDescriptor?
+	var clipNotchRenderDescriptor : ClipNotchRenderDescriptor?
 	var markerRenderDescriptor : MarkerRenderDescriptor?
+	var getClipNotches : (ClipId) -> [Notch]
 	
-	init()
+	init(getClipNotches:@escaping(ClipId) -> [Notch])
 	{
+		print("new TrackContentRenderer()")
+		self.getClipNotches = getClipNotches
 	}
 	
 	func SetupView(metalView: MTKView) 
@@ -244,6 +311,16 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 		clipBoxContentRenderDescriptor = try clipBoxContentRenderDescriptor ?? ClipBoxContentRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 		try clipBoxContentRenderDescriptor!.Render(clips: self.clipCache, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
 
+		//	render notches on top
+		//	todo: one giant batch?
+		clipNotchRenderDescriptor = try clipNotchRenderDescriptor ?? ClipNotchRenderDescriptor(metalView: metalView, shaderInBundle: .module)
+		for clip in clipCache
+		{
+			let notches = getClipNotches(clip.id)
+			try clipNotchRenderDescriptor!.Render(notches:notches,clip: clip, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
+		}
+		
+			
 		markerRenderDescriptor = try markerRenderDescriptor ?? MarkerRenderDescriptor(metalView: metalView, shaderInBundle: .module)
 		try markerRenderDescriptor!.Render(markers: self.markerCache, trackViewMeta: self.viewMeta, metalView: metalView, viewportSize: size, commandEncoder: commandEncoder)
 	}
@@ -254,7 +331,7 @@ public struct ClipTimelineView : View
 {
 	//	viewmeta is external, so that parent views can do Pixel<>Coord conversions - or show view zoom/range
 	@Binding var viewMeta : TimelineViewMeta
-	@StateObject var trackRenderer = TrackContentRenderer()
+	@StateObject var trackRenderer : TrackContentRenderer
 	@Binding var selectedClip : ClipId?
 	@Binding var hoveredClip : ClipId?
 	var clips : [Clip]
@@ -268,8 +345,9 @@ public struct ClipTimelineView : View
 	@State private var leftDragStart : (TimelineViewMeta,CGPoint)? = nil
 
 	var onClickedEmptySpace : (TimelineCoord)->Void
+	var getClipNotches : (ClipId)->[Notch]
 	
-	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>,onClickedEmptySpace:@escaping(TimelineCoord)->Void)
+	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>,onClickedEmptySpace:@escaping(TimelineCoord)->Void,getClipNotches:@escaping ((ClipId)->[Notch]))
 	{
 		self.clips = clips
 		self.markers = markers
@@ -280,7 +358,12 @@ public struct ClipTimelineView : View
 		//	this modifies state object too early.
 		//	covered by OnAppear
 		//self.OnDataChanged()	
+		self.getClipNotches = getClipNotches
+		//print("Setting get notches from \(self._trackRenderer.wrappedValue.getNotches) to \(self.getClipNotches)")
+		self._trackRenderer = StateObject(wrappedValue: TrackContentRenderer(getClipNotches:getClipNotches) )
+		//print("get notches is now \(self._trackRenderer.wrappedValue.getNotches)")
 	}
+	
 	
 	public var body: some View 
 	{
@@ -320,7 +403,7 @@ public struct ClipTimelineView : View
 			self.viewMeta.lastViewSize = newSize
 		}
 	}
-	
+		
 	func OnMarkersChanged()
 	{
 		//print("Markers data changed")
@@ -388,7 +471,6 @@ public struct ClipTimelineView : View
 		else if leftDragStart != nil
 		{
 			//	dropped
-			print("Dropped")
 			leftDragStart = nil
 		}
 		
@@ -436,7 +518,7 @@ func MakeFakeClips() -> [Clip]
 		t in
 		Clip(id:ClipId(), column: t*10, width: 20, row: t % 5, type: t)
 	}
-	let longClip = Clip(id: ClipId(), column: 3, width: 20000, row:6, type:99)
+	let longClip = Clip(id: 12345, column: 3, width: 20000, row:6, type:99)
 	clips.append(longClip)
 	return clips
 }
@@ -451,6 +533,38 @@ func MakeFakeMarkers() -> [Marker]
 }
 
 
+
+class RandomClipNotchProducer
+{
+	var notchFrames : [Notch] = []
+	let frameMin = 0
+	let frameMax = 20000
+	var writeThread : Task<Void,Never>?
+
+	init()
+	{
+		self.writeThread = Task
+		{
+			await self.NotchWritingThread()
+		}
+	}
+	
+	deinit
+	{
+		writeThread?.cancel()
+	}
+	
+	func NotchWritingThread() async
+	{
+		for i in 0..<2000
+		{
+			notchFrames.append( Notch(frame: Int32(i), type: 0) )
+			await Task.sleep(milliseconds: 100)
+		}
+	}
+}
+
+
 #Preview 
 {
 	@Previewable @State var clips = MakeFakeClips()
@@ -460,11 +574,18 @@ func MakeFakeMarkers() -> [Marker]
 	@Previewable @State var timeMarker = Marker(column: 10, type: 0)
 	//@Previewable @State var markers = MakeFakeMarkers()
 	var markers : [Marker] { [timeMarker]	}
+	var clipNotchProducer = RandomClipNotchProducer()
 	
 	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta,selectedClip: $selectedClip,hoveredClip: $hoveredClip)
 	{
 		clickCoord in
 		timeMarker.column = clickCoord.x 
+	}
+	getClipNotches:
+	{
+		clipId in
+		//print("Get notches for \(clipId)")
+		return clipId == 12345 ? clipNotchProducer.notchFrames : []
 	}
 		.overlay
 	{
@@ -484,5 +605,5 @@ func MakeFakeMarkers() -> [Marker]
 		.allowsHitTesting(false)
 		.frame(maxWidth: .infinity,maxHeight: .infinity,alignment: .topLeading)
 	}
-	//.frame(maxWidth:300,maxHeight: 300)
+	.frame(width:400,height: 500)
 }

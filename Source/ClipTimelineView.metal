@@ -2,6 +2,22 @@
 using namespace metal;
 
 
+bool4 IsPixelEdge(float2 ScreenPosition,float4 ScreenRect)
+{
+	//	we're expecting these as int's anyway
+	int2 ScreenPx = int2(ScreenPosition);
+	int2 TopLeftPx = int2(ScreenRect.xy);
+	int2 BottomRightPx = int2(ScreenRect.xy+ScreenRect.zw) - int2(1,1);
+	
+	bool LeftEdge = ScreenPx.x == TopLeftPx.x; 
+	bool RightEdge = ScreenPx.x == BottomRightPx.x;
+	bool TopEdge = ScreenPx.y == TopLeftPx.y;
+	bool BottomEdge = ScreenPx.y == BottomRightPx.y;
+	
+	return bool4(LeftEdge, TopEdge, RightEdge, BottomEdge);
+}
+
+
 struct Clip
 {
 	uint32_t column;
@@ -10,6 +26,15 @@ struct Clip
 	uint32_t type;
 	uint32_t id;
 };
+
+struct Notch
+{
+	//	todo: reduce to bits
+	//		move type to batch info
+	uint32_t frame;	//	inside clip so 0 = clip.column + 0
+	uint32_t type;	
+};
+
 
 struct Marker
 {
@@ -99,7 +124,28 @@ struct FragColourAndDepthOut
 	float depth[[depth(any)]];
 };
 
-fragment FragColourAndDepthOut ColourFrag(ContentVertexOutput in [[stage_in]])
+
+fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]])
+{
+	/*
+	if ( any(IsPixelEdge( in.boxPx, float4(0,0,in.boxSizePx+float2(1,0)) ) ) )
+		discard_fragment();
+	 */
+	//	draw circle
+	float Radius = 4.0;
+	auto BoxCenter = in.boxSizePx * 0.5;
+	//auto NotchCenter = BoxCenter;
+	auto NotchCenter = in.boxSizePx * float2(0.5,0.8);
+	float Distance = distance(in.boxPx,NotchCenter);
+	if ( Distance > Radius )
+	{
+		discard_fragment();
+	}
+	return float4(1,1,1,1);
+}
+
+
+fragment FragColourAndDepthOut ClipBoxFrag(ContentVertexOutput in [[stage_in]])
 {
 	float EdgeDepth = 1;
 	float BoxDepth = 0;
@@ -212,29 +258,31 @@ vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 	int RowsCovered = 1;
 	
 	return ClipBoxVertexImpl( vertexId, clip, RowsCovered, timelineViewMeta, ScreenSize );
-	/*
-	
-	//	make pixel box
-	float left = clip.column;
-	float right = left + (clip.width);
-
-	//	get coords
-	float coordX = mix( left, right, vert.x );
-	float coordY = clip.row;
-	
-	out.screenPosition = CoordToScreenPx( float2(coordX,coordY), timelineViewMeta );
-	out.screenPosition.y += vert.y * timelineViewMeta.rowHeightPx;
-	
-	out.clipPosition = ScreenPxToClip( out.screenPosition, ScreenSize );
-	out.uv = float2(vert.x,vert.y);
-	out.boxSizePx = float2( clip.width * timelineViewMeta.columnWidthPx, timelineViewMeta.rowHeightPx );
-	out.boxPx = out.uv * out.boxSizePx;
-	out.coordX = coordX;
-	out.clip = clip;
-	
-	return out;*/
 }
 
+
+vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
+										 uint instanceId [[instance_id]],
+									   constant Notch* notchs[[buffer(0)]],
+									   constant Clip& clip[[buffer(1)]],
+										 constant TimelineViewMeta& timelineViewMeta[[buffer(2)]],
+										 constant float2& ScreenSize[[buffer(3)]]
+										 ) 
+{
+	ContentVertexOutput out;
+	QuadVertex vert = quadVertexes[vertexId];
+	auto Notch = notchs[instanceId];
+	int RowsCovered = 1;
+	
+	Clip NotchClip;
+	NotchClip.column = clip.column + Notch.frame;
+	NotchClip.width = 1;
+	NotchClip.row = clip.row;
+	NotchClip.type = Notch.type;
+	NotchClip.id = clip.id;
+	
+	return ClipBoxVertexImpl( vertexId, NotchClip, RowsCovered, timelineViewMeta, ScreenSize );
+}
 
 vertex ContentVertexOutput MarkerVertex( uint vertexId [[vertex_id]],
 										 uint instanceId [[instance_id]],
