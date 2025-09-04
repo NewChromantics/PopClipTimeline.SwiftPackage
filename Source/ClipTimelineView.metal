@@ -129,10 +129,6 @@ fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]])
 {
 	auto Colour = float4(1,1,1,1);
 	
-	if ( in.boxSizePx.x < 4 )
-	{
-		return Colour;
-	}
 	/*
 	if ( any(IsPixelEdge( in.boxPx, float4(0,0,in.boxSizePx+float2(1,0)) ) ) )
 		discard_fragment();
@@ -142,7 +138,15 @@ fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]])
 	auto BoxCenter = in.boxSizePx * 0.5;
 	//auto NotchCenter = BoxCenter;
 	auto NotchCenter = in.boxSizePx * float2(0.5,0.8);
+
 	float Distance = distance(in.boxPx,NotchCenter);
+	
+	//	if not very wide, don't take width of circle into account
+	if ( in.boxSizePx.x < 4 )
+	{
+		Distance = (NotchCenter.y - in.boxPx.y);
+	}
+	
 	if ( Distance > Radius )
 	{
 		discard_fragment();
@@ -236,10 +240,19 @@ ContentVertexOutput ClipBoxVertexImpl( uint vertexId,
 	float right = left + max(uint32_t(1),clip.width);	//	clips with 0 duration need to be visible for at least one unit
 	
 	//	get coords
-	float coordX = mix( left, right, vert.x );
+	//float coordX = mix( left, right, vert.x );
 	float coordY = clip.row;
+
+	auto LeftScreenPosition = CoordToScreenPx( float2(left,coordY), timelineViewMeta );
+	auto RightScreenPosition = CoordToScreenPx( float2(right,coordY), timelineViewMeta );
+	float coordX = mix( left, right, vert.x );
 	
-	out.screenPosition = CoordToScreenPx( float2(coordX,coordY), timelineViewMeta );
+	if ( RightScreenPosition.x - LeftScreenPosition.x < MinPixelWidth )
+	{
+		RightScreenPosition.x = LeftScreenPosition.x + MinPixelWidth;
+	}
+	
+	out.screenPosition = mix( LeftScreenPosition, RightScreenPosition, vert.x );
 	out.screenPosition.y += vert.y * RowsCovered * timelineViewMeta.rowHeightPx;
 	
 	out.clipPosition = ScreenPxToClip( out.screenPosition, ScreenSize );
@@ -248,7 +261,39 @@ ContentVertexOutput ClipBoxVertexImpl( uint vertexId,
 	out.boxPx = out.uv * out.boxSizePx;
 	out.coordX = coordX;
 	out.clip = clip;
-	
+	/*
+	 
+	 //	make pixel box
+	 float left = clip.column;
+	 float right = left + max(uint32_t(1),clip.width);	//	clips with 0 duration need to be visible for at least one unit
+	 
+	 //	get coords
+	 //float coordX = mix( left, right, vert.x );
+	 float coordY = clip.row;
+	 
+	 //	gr: calc left screen pos, and right screen pos?
+	 auto LeftScreenPosition = CoordToScreenPx( float2(left,coordY), timelineViewMeta );
+	 auto RightScreenPosition = CoordToScreenPx( float2(right,coordY), timelineViewMeta );
+	 
+	 out.uv = float2(vert.x,vert.y);
+	 out.boxSizePx = float2( clip.width * timelineViewMeta.columnWidthPx, timelineViewMeta.rowHeightPx );
+	 if ( int(out.boxSizePx.x) < MinPixelWidth )
+	 {
+	 //	recalc coord
+	 //out.boxSizePx.x = MinPixelWidth;
+	 //RightScreenPosition.x = LeftScreenPosition.x + MinPixelWidth;
+	 }
+	 
+	 auto coordX = mix(LeftScreenPosition.x,RightScreenPosition.x,vert.x);
+	 out.screenPosition = CoordToScreenPx( float2(coordX,coordY), timelineViewMeta );
+	 out.screenPosition.y += vert.y * RowsCovered * timelineViewMeta.rowHeightPx;
+	 out.boxPx = out.uv * out.boxSizePx;
+	 
+	 out.clipPosition = ScreenPxToClip( out.screenPosition, ScreenSize );
+	 out.coordX = coordX;
+	 out.clip = clip;
+	 
+	 */
 	return out;
 }
 

@@ -558,7 +558,7 @@ class RandomClipNotchProducer
 	{
 		for i in 0..<2000
 		{
-			notchFrames.append( Notch(frame: Int32(i), type: 0) )
+			notchFrames.append( Notch(frame: Int32(i*10), type: 0) )
 			await Task.sleep(milliseconds: 100)
 		}
 	}
