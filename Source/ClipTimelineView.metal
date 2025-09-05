@@ -27,12 +27,17 @@ struct Clip
 	uint32_t id;
 };
 
+
+struct NotchMeta
+{
+	uint32_t notchRow;	
+};
+
 struct Notch
 {
 	//	todo: reduce to bits
 	//		move type to batch info
 	uint32_t frame;	//	inside clip so 0 = clip.column + 0
-	uint32_t type;	
 };
 
 
@@ -124,30 +129,19 @@ struct FragColourAndDepthOut
 	float depth[[depth(any)]];
 };
 
-
-fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]])
+//	todo: 
+fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]],
+							  constant NotchMeta& NotchMeta[[buffer(0)]]
+							  )
 {
 	auto Colour = float4(1,1,1,1);
+	float NotchRowCount = 4;
 	
-	/*
-	if ( any(IsPixelEdge( in.boxPx, float4(0,0,in.boxSizePx+float2(1,0)) ) ) )
-		discard_fragment();
-	 */
-	//	draw circle
-	float Radius = 4.0;
-	auto BoxCenter = in.boxSizePx * 0.5;
-	//auto NotchCenter = BoxCenter;
-	auto NotchCenter = in.boxSizePx * float2(0.5,0.8);
-
-	float Distance = distance(in.boxPx,NotchCenter);
+	//	fill in box
+	auto top_v = (NotchMeta.notchRow / NotchRowCount);
+	auto bottom_v = top_v + (1.0 / NotchRowCount);
 	
-	//	if not very wide, don't take width of circle into account
-	if ( in.boxSizePx.x < 4 )
-	{
-		Distance = (NotchCenter.y - in.boxPx.y);
-	}
-	
-	if ( Distance > Radius )
+	if ( in.uv.y < top_v || in.uv.y > bottom_v )
 	{
 		discard_fragment();
 	}
@@ -317,9 +311,10 @@ vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
 										 uint instanceId [[instance_id]],
 									   constant Notch* notchs[[buffer(0)]],
-									   constant Clip& clip[[buffer(1)]],
-										 constant TimelineViewMeta& timelineViewMeta[[buffer(2)]],
-										 constant float2& ScreenSize[[buffer(3)]]
+									   constant NotchMeta& NotchMeta[[buffer(1)]],
+									   constant Clip& clip[[buffer(2)]],
+										 constant TimelineViewMeta& timelineViewMeta[[buffer(3)]],
+										 constant float2& ScreenSize[[buffer(4)]]
 										 ) 
 {
 	ContentVertexOutput out;
@@ -331,7 +326,7 @@ vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
 	NotchClip.column = clip.column + Notch.frame;
 	NotchClip.width = 1;
 	NotchClip.row = clip.row;
-	NotchClip.type = Notch.type;
+	NotchClip.type = NotchMeta.notchRow;
 	NotchClip.id = clip.id;
 
 	int MinPixelWidth = 1;
