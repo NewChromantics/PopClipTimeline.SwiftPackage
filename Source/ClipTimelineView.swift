@@ -52,14 +52,55 @@ public struct Notch : Equatable
 		self.frame = frame
 	}
 }
+
+public extension Collection
+{
+	//	x = array[safeIndex:999] ?? 123
+	subscript(safeIndex i: Index) -> Element? 
+	{
+		get 
+		{
+			if i >= self.endIndex
+			{
+				return nil
+			}
+			//guard self.indices.contains(i) else { return nil }
+			return self[i]
+		}
+	}
+}
+
+public extension Color
+{
+	var rgba : simd_float4?
+	{
+		let uic = UIColor(self)
+		guard let components = uic.cgColor.components, components.count > 0 else 
+		{
+			return nil
+		}
+
+		//	handle sub-3 component colours (monochrome)
+		let r = components[0]
+		let g = components[safeIndex: 1] ?? r
+		let b = components[safeIndex: 2] ?? r
+		let a = components[safeIndex: 3] ?? 1
+		return simd_float4(Float(r),Float(g),Float(b),Float(a))
+	}
+}
+
 //	match shader
 public struct NotchMeta : Equatable
 {
 	var notchRow : UInt32
+	var colour : simd_float4
+	var minWidthPx : UInt32
 	
-	public init(notchRow: UInt32) 
+	public init(notchRow: UInt32,colour:Color,minWidthPx:UInt32=1) 
 	{
 		self.notchRow = notchRow
+		self.colour = colour.rgba ?? simd_float4.one
+		self.minWidthPx = minWidthPx
 	}
 }
 
@@ -476,7 +517,7 @@ public struct ClipTimelineView : View
 		{
 			//	first click
 			let clickCoord = viewMeta.PixelToCoord(mouseState.position)
-			print("Click \(clickCoord)")
+			//print("Click \(clickCoord)")
 			let clickedClip = self.GetClipAt(clickCoord)
 			if let clickedClip
 			{
@@ -567,13 +608,12 @@ class RandomClipNotchProducer
 	let frameMin = 0
 	let frameMax = 20000
 	var writeThread : Task<Void,Never>?
-	var type : UInt32
-	var notchMeta : NotchMeta	{	NotchMeta(notchRow: type)	}
+	var notchMeta : NotchMeta
 	var notches : NotchBatch	{	NotchBatch(meta: notchMeta, notches: notchFrames )	}
 
-	init(type:UInt32,step:Int)
+	init(meta:NotchMeta,step:Int)
 	{
-		self.type = type
+		self.notchMeta = meta
 		self.writeThread = Task
 		{
 			await self.NotchWritingThread(step:step)
@@ -599,14 +639,14 @@ class RandomClipNotchProducer
 #Preview 
 {
 	@Previewable @State var clips = MakeFakeClips()
-	@Previewable @State var viewMeta = TimelineViewMeta()
+	@Previewable @State var viewMeta = TimelineViewMeta(columnWidthPx: 0.7)
 	@Previewable @State var selectedClip : ClipId? 
 	@Previewable @State var hoveredClip : ClipId? 
 	@Previewable @State var timeMarker = Marker(column: 10, type: 0)
 	//@Previewable @State var markers = MakeFakeMarkers()
 	var markers : [Marker] { [timeMarker]	}
-	var clipNotchProducer1 = RandomClipNotchProducer(type: 0,step:2)
-	var clipNotchProducer2 = RandomClipNotchProducer(type: 2,step:7)
+	var clipNotchProducer1 = RandomClipNotchProducer(meta:NotchMeta(notchRow: 0, colour: .red, minWidthPx: 5),step:15)
+	var clipNotchProducer2 = RandomClipNotchProducer(meta:NotchMeta(notchRow: 3, colour: .blue, minWidthPx: 10),step:50)
 	
 	ClipTimelineView(clips: clips,markers:markers,viewMeta: $viewMeta,selectedClip: $selectedClip,hoveredClip: $hoveredClip)
 	{

@@ -30,7 +30,9 @@ struct Clip
 
 struct NotchMeta
 {
-	uint32_t notchRow;	
+	uint32_t	notchRow;
+	float4		colour;
+	uint32_t 	minWidthPx;
 };
 
 struct Notch
@@ -129,12 +131,12 @@ struct FragColourAndDepthOut
 	float depth[[depth(any)]];
 };
 
-//	todo: 
+
 fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]],
 							  constant NotchMeta& NotchMeta[[buffer(0)]]
 							  )
 {
-	auto Colour = float4(1,1,1,1);
+	auto Colour = NotchMeta.colour;
 	float NotchRowCount = 4;
 	
 	//	fill in box
@@ -255,39 +257,7 @@ ContentVertexOutput ClipBoxVertexImpl( uint vertexId,
 	out.boxPx = out.uv * out.boxSizePx;
 	out.coordX = coordX;
 	out.clip = clip;
-	/*
-	 
-	 //	make pixel box
-	 float left = clip.column;
-	 float right = left + max(uint32_t(1),clip.width);	//	clips with 0 duration need to be visible for at least one unit
-	 
-	 //	get coords
-	 //float coordX = mix( left, right, vert.x );
-	 float coordY = clip.row;
-	 
-	 //	gr: calc left screen pos, and right screen pos?
-	 auto LeftScreenPosition = CoordToScreenPx( float2(left,coordY), timelineViewMeta );
-	 auto RightScreenPosition = CoordToScreenPx( float2(right,coordY), timelineViewMeta );
-	 
-	 out.uv = float2(vert.x,vert.y);
-	 out.boxSizePx = float2( clip.width * timelineViewMeta.columnWidthPx, timelineViewMeta.rowHeightPx );
-	 if ( int(out.boxSizePx.x) < MinPixelWidth )
-	 {
-	 //	recalc coord
-	 //out.boxSizePx.x = MinPixelWidth;
-	 //RightScreenPosition.x = LeftScreenPosition.x + MinPixelWidth;
-	 }
-	 
-	 auto coordX = mix(LeftScreenPosition.x,RightScreenPosition.x,vert.x);
-	 out.screenPosition = CoordToScreenPx( float2(coordX,coordY), timelineViewMeta );
-	 out.screenPosition.y += vert.y * RowsCovered * timelineViewMeta.rowHeightPx;
-	 out.boxPx = out.uv * out.boxSizePx;
-	 
-	 out.clipPosition = ScreenPxToClip( out.screenPosition, ScreenSize );
-	 out.coordX = coordX;
-	 out.clip = clip;
-	 
-	 */
+
 	return out;
 }
 
@@ -298,8 +268,6 @@ vertex ContentVertexOutput ClipBoxVertex( uint vertexId [[vertex_id]],
 												constant float2& ScreenSize[[buffer(2)]]
 ) 
 {
-	ContentVertexOutput out;
-	QuadVertex vert = quadVertexes[vertexId];
 	auto clip = clips[instanceId];
 	int RowsCovered = 1;
 	int MinPixelWidth = 0;
@@ -317,8 +285,6 @@ vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
 										 constant float2& ScreenSize[[buffer(4)]]
 										 ) 
 {
-	ContentVertexOutput out;
-	QuadVertex vert = quadVertexes[vertexId];
 	auto Notch = notchs[instanceId];
 	int RowsCovered = 1;
 	
@@ -329,7 +295,7 @@ vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
 	NotchClip.type = NotchMeta.notchRow;
 	NotchClip.id = clip.id;
 
-	int MinPixelWidth = 1;
+	int MinPixelWidth = NotchMeta.minWidthPx;
 	
 	return ClipBoxVertexImpl( vertexId, NotchClip, MinPixelWidth, RowsCovered, timelineViewMeta, ScreenSize );
 }
