@@ -17,21 +17,21 @@ bool4 IsPixelEdge(float2 ScreenPosition,float4 ScreenRect)
 	return bool4(LeftEdge, TopEdge, RightEdge, BottomEdge);
 }
 
+typedef uint32_t ClipId;
 
 struct Clip
 {
 	uint32_t column;
 	uint32_t width;
 	uint32_t row;
-	uint32_t type;
-	uint32_t id;
+	float4 colour;
+	ClipId id;
 };
-
 
 struct NotchMeta
 {
-	uint32_t	notchRow;
 	float4		colour;
+	uint32_t	notchRow;
 	uint32_t 	minWidthPx;
 };
 
@@ -45,8 +45,8 @@ struct Notch
 
 struct Marker
 {
-	uint32_t column;
-	uint32_t type;
+	uint32_t 	column;
+	float4		colour;
 };
 
 struct TimelineViewMeta
@@ -99,20 +99,16 @@ float3 GetDebugColour(int Value)
 
 
 
-float3 GetClipColour(Clip content)
+float4 GetClipColour(Clip content)
 {
-	return GetDebugColour(content.type);
+	//	todo: add selection tints here?
+	return content.colour;
 }
 
 
-float3 GetMarkerColour(Clip content)
+float4 GetMarkerColour(Clip content)
 {
-	const int DebugColourCount = 1;
-	float3 DebugColours[DebugColourCount] =
-	{
-		float3(1,1,1),
-	};
-	return DebugColours[content.type%DebugColourCount];
+	return content.colour;
 }
 
 constant QuadVertex quadVertexes[] = 
@@ -136,6 +132,14 @@ fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]],
 							  constant NotchMeta& NotchMeta[[buffer(0)]]
 							  )
 {
+	//	dodge edge
+	auto Edges = IsPixelEdge( in.boxPx, float4(0,0,in.boxSizePx) );
+	if ( Edges[1] || Edges[3] )
+	{
+		discard_fragment();
+		return float4(1,0,1,1);
+	}
+	
 	auto Colour = NotchMeta.colour;
 	float NotchRowCount = 4;
 	
@@ -174,19 +178,18 @@ fragment FragColourAndDepthOut ClipBoxFrag(ContentVertexOutput in [[stage_in]])
 	
 	//	use of int causes aliasing - should really use float and mix colours
 	bool Odd = (int(in.coordX) % 2) == 1;
-	float3 Colour = GetClipColour(in.clip);
+	auto Colour = GetClipColour(in.clip);
 	if ( Odd )
 		Colour = mix( Colour, 0.5, 0.2 );
-	return { .colour = float4( Colour, 1 ), .depth=BoxDepth };
+	return { .colour = Colour, .depth=BoxDepth };
 }
 
 
 
 fragment float4 MarkerFrag(ContentVertexOutput in [[stage_in]])
 {
-	float3 Colour = GetMarkerColour(in.clip);
-	return float4( Colour, 0.8 );
-
+	auto Colour = GetMarkerColour(in.clip);
+	return Colour;
 }
 
 
@@ -292,8 +295,7 @@ vertex ContentVertexOutput NotchVertex( uint vertexId [[vertex_id]],
 	NotchClip.column = clip.column + Notch.frame;
 	NotchClip.width = 1;
 	NotchClip.row = clip.row;
-	NotchClip.type = NotchMeta.notchRow;
-	NotchClip.id = clip.id;
+	NotchClip.colour = NotchMeta.colour;
 
 	int MinPixelWidth = NotchMeta.minWidthPx;
 	
@@ -307,14 +309,13 @@ vertex ContentVertexOutput MarkerVertex( uint vertexId [[vertex_id]],
 										 constant float2& ScreenSize[[buffer(2)]]
 										 ) 
 {
-	ContentVertexOutput out;
-	QuadVertex vert = quadVertexes[vertexId];
 	auto marker = markers[instanceId];
 	//auto clip = clips[instanceId];
 	Clip clip;
 	clip.column = marker.column;
 	clip.width = 1;
 	clip.row = 0;
+	clip.colour = marker.colour;
 	int RowsCovered = 100;
 	int MinPixelWidth = 1;
 	

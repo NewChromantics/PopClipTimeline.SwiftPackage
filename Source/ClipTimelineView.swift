@@ -33,12 +33,12 @@ public struct ClipTimelineError: LocalizedError
 public struct Marker : Equatable
 {
 	var column : Int32
-	var type : UInt32
+	var colour : simd_float4
 	
-	public init(column: Int32,type: UInt32) 
+	public init(column: Int32,colour:Color) 
 	{
 		self.column = column
-		self.type = type
+		self.colour = colour.rgba ?? simd_float4.one
 	}
 }
 
@@ -92,8 +92,8 @@ public extension Color
 //	match shader
 public struct NotchMeta : Equatable
 {
-	var notchRow : UInt32
 	var colour : simd_float4
+	var notchRow : UInt32
 	var minWidthPx : UInt32
 	
 	public init(notchRow: UInt32,colour:Color,minWidthPx:UInt32=1) 
@@ -116,6 +116,7 @@ public struct NotchBatch
 	}
 }
 
+
 //	match shader
 public struct Clip : Equatable, Identifiable
 {
@@ -123,16 +124,17 @@ public struct Clip : Equatable, Identifiable
 	var width : UInt32
 	var lastColumn : UInt32	{	column + (max(1,width)-1)	}
 	var row : UInt32
-	var type : UInt32	//	selected etc
+	var colour : simd_float4
+	//var type : UInt32	//	selected etc
 	public var id : ClipId
 	
-	public init(id:ClipId,column: UInt32, width: UInt32, row: UInt32, type: UInt32) 
+	public init(id:ClipId,column: UInt32, width: UInt32, row: UInt32, colour: Color) 
 	{
 		self.id = id
 		self.column = column
 		self.width = width
 		self.row = row
-		self.type = type
+		self.colour = colour.rgba ?? simd_float4.one
 	}
 }
 
@@ -581,12 +583,17 @@ public struct ClipTimelineView : View
 
 func MakeFakeClips() -> [Clip]
 {
+	let colours : [Color] = 
+	[
+		.purple,.red,.orange,.yellow,.green,.cyan,.blue
+	]
+	
 	var clips = Array(0..<6).map
 	{
 		t in
-		Clip(id:ClipId(), column: t*10, width: 20, row: t % 5, type: t)
+		Clip(id:ClipId(), column: t*10, width: 20, row: t % 5, colour: colours[Int(t)%colours.count])
 	}
-	let longClip = Clip(id: 12345, column: 3, width: 20000, row:6, type:99)
+	let longClip = Clip(id: 12345, column: 3, width: 20000, row:6, colour: .indigo)
 	clips.append(longClip)
 	return clips
 }
@@ -596,7 +603,7 @@ func MakeFakeMarkers() -> [Marker]
 	return Array(0..<5).map
 	{
 		t in
-		Marker(column: 4 + Int32(t) * 10, type: t)
+		Marker(column: 4 + Int32(t) * 10, colour: .white)
 	}
 }
 
@@ -642,7 +649,7 @@ class RandomClipNotchProducer
 	@Previewable @State var viewMeta = TimelineViewMeta(columnWidthPx: 0.7)
 	@Previewable @State var selectedClip : ClipId? 
 	@Previewable @State var hoveredClip : ClipId? 
-	@Previewable @State var timeMarker = Marker(column: 10, type: 0)
+	@Previewable @State var timeMarker = Marker(column: 10, colour: .cyan)
 	//@Previewable @State var markers = MakeFakeMarkers()
 	var markers : [Marker] { [timeMarker]	}
 	var clipNotchProducer1 = RandomClipNotchProducer(meta:NotchMeta(notchRow: 0, colour: .red, minWidthPx: 5),step:15)
