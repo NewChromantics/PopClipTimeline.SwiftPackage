@@ -154,7 +154,7 @@ public struct TimelineViewMeta : Equatable
 {
 	public var leftColumn : Int32 = 0
 	public var rowHeightPx : UInt32 = 40
-	public var rowGapPx : UInt32 = 1
+	public var rowGapPx : UInt32 = 3
 	public var columnWidthPx : Float
 	
 	//	this is a cache, but we need it to flip coords
@@ -259,6 +259,7 @@ struct ClipBoxContentRenderDescriptor : RenderCommand
 	var vertexBuffer_timelineViewMeta = 1
 	var vertexBuffer_screenSize = 2
 	static var fragShaderName = "ClipBoxFrag"
+	var fragBuffer_timelineViewMeta = 0
 	
 	init(metalView: MTKView, shaderInBundle: Bundle) throws 
 	{
@@ -281,6 +282,7 @@ struct ClipBoxContentRenderDescriptor : RenderCommand
 		
 		var trackViewMeta = trackViewMeta
 		commandEncoder.setVertexBytes(&trackViewMeta, index:self.vertexBuffer_timelineViewMeta )
+		commandEncoder.setFragmentBytes(&trackViewMeta, index:self.fragBuffer_timelineViewMeta )
 		
 		var screenSize = [Float(viewportSize.width),Float(viewportSize.height)]
 		commandEncoder.setVertexBytes(&screenSize, length: MemoryLayout<Float>.stride*2, index:self.vertexBuffer_screenSize )

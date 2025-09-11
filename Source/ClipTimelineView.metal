@@ -155,7 +155,9 @@ fragment float4 ClipNotchFrag(ContentVertexOutput in [[stage_in]],
 }
 
 
-fragment FragColourAndDepthOut ClipBoxFrag(ContentVertexOutput in [[stage_in]])
+fragment FragColourAndDepthOut ClipBoxFrag(ContentVertexOutput in [[stage_in]],
+										   constant TimelineViewMeta& timelineViewMeta
+										   )
 {
 	float EdgeDepth = 1;
 	float BoxDepth = 0;
@@ -175,12 +177,16 @@ fragment FragColourAndDepthOut ClipBoxFrag(ContentVertexOutput in [[stage_in]])
 	
 	if ( LeftEdge || TopEdge || RightEdge || BottomEdge )
 		return EdgeColour;
-	
-	//	use of int causes aliasing - should really use float and mix colours
-	bool Odd = (int(in.coordX) % 2) == 1;
+
+	//	alternate colours... if they dont just alias when too small
 	auto Colour = GetClipColour(in.clip);
-	if ( Odd )
-		Colour = mix( Colour, 0.5, 0.2 );
+	if ( timelineViewMeta.columnWidthPx >= 2 )
+	{
+		//	use of int causes aliasing - should really use float and mix colours
+		bool Odd = (int(in.coordX) % 2) == 1;
+		if ( Odd )
+			Colour = mix( Colour, 0.5, 0.2 );
+	}
 	return { .colour = Colour, .depth=BoxDepth };
 }
 
