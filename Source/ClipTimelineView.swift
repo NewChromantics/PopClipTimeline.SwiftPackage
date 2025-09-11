@@ -138,7 +138,7 @@ public struct Clip : Equatable, Identifiable
 	}
 }
 
-public struct TimelineCoord
+public struct TimelineCoord : Equatable
 {
 	public var x : Int32 = 0
 	public var y : Int32 = 0
@@ -396,7 +396,9 @@ class TrackContentRenderer : ContentRenderer, ObservableObject
 	}
 }
 
-//	read-only
+
+
+//	read-only timeline
 public struct ClipTimelineView : View 
 {
 	//	viewmeta is external, so that parent views can do Pixel<>Coord conversions - or show view zoom/range
@@ -407,17 +409,21 @@ public struct ClipTimelineView : View
 	var clips : [Clip]
 	var markers : [Marker]
 	var renderHeight : CGFloat	{	CGFloat(GetLargestClipRow()) * CGFloat((viewMeta.rowHeightPx+viewMeta.rowGapPx))	}
-
+	
 	//	make binding for user?
 	@State var hoverCoord = TimelineCoord(0,0)
-
+	
 	@State private var rightDragStart : (TimelineViewMeta,CGPoint)? = nil
 	@State private var leftDragStart : (TimelineViewMeta,CGPoint)? = nil
-
+	
 	var onClickedEmptySpace : (TimelineCoord)->Void
 	var getClipNotches : (ClipId)->[NotchBatch]
+	var getContextMenu : ((ClipId?,TimelineCoord)->AnyView)?
+	@State var cachedContextMenu : (ClipId?,TimelineCoord,AnyView)? = nil
 	
-	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>,onClickedEmptySpace:@escaping(TimelineCoord)->Void,getClipNotches:@escaping ((ClipId)->[NotchBatch]))
+	@State var rightMouseDownLocation : NSPoint = .zero	//	for context menu
+	
+	public init(clips:[Clip],markers:[Marker],viewMeta:Binding<TimelineViewMeta>,selectedClip:Binding<ClipId?>,hoveredClip:Binding<ClipId?>,onClickedEmptySpace:@escaping(TimelineCoord)->Void,getClipNotches:@escaping ((ClipId)->[NotchBatch]),getContextMenu:((ClipId?,TimelineCoord)->AnyView)?=nil)
 	{
 		self.clips = clips
 		self.markers = markers
@@ -425,10 +431,14 @@ public struct ClipTimelineView : View
 		self._selectedClip = selectedClip
 		self._hoveredClip = hoveredClip
 		self.onClickedEmptySpace = onClickedEmptySpace
+		self.getClipNotches = getClipNotches
+		self.getContextMenu = getContextMenu
+		
 		//	this modifies state object too early.
 		//	covered by OnAppear
 		//self.OnDataChanged()	
-		self.getClipNotches = getClipNotches
+		
+		//	gr: fix for this recreating the ContentRenderer in other cases was setting functor on .onAppear
 		//print("Setting get notches from \(self._trackRenderer.wrappedValue.getNotches) to \(self.getClipNotches)")
 		self._trackRenderer = StateObject(wrappedValue: TrackContentRenderer(getClipNotches:getClipNotches) )
 		//print("get notches is now \(self._trackRenderer.wrappedValue.getNotches)")
@@ -444,34 +454,93 @@ public struct ClipTimelineView : View
 			.onChange(of: selectedClip, OnSelectedClipChanged)
 			.onChange(of: viewMeta, OnViewMetaChanged)
 			.onAppear
-			{
-				OnMarkersChanged()
-				OnClipsChanged()
-				OnSelectedClipChanged()
-				OnViewMetaChanged()
-			}
-			.overlay
-			{
-				/*
-				VStack(alignment: .leading)
-				{
-					Text("clips x\(clips.count)")
-					Text("Hover (\(hoverCoord.x),\(hoverCoord.y))")
-					Text("zoom \(trackRenderer.viewMeta.columnWidthPx)")
-					Text("left \(trackRenderer.viewMeta.leftColumn)")
-					Spacer()
-				}
-				.foregroundStyle(.white)
-				.background(.blue.opacity(0.5))
-				.allowsHitTesting(false)
-				 */
-			}
-			.frame(minHeight: renderHeight)
-			.onChange(of: trackRenderer.lastRenderSize)
+		{
+			OnMarkersChanged()
+			OnClipsChanged()
+			OnSelectedClipChanged()
+			OnViewMetaChanged()
+		}
+		.overlay
+		{
+			/*
+			 VStack(alignment: .leading)
+			 {
+			 Text("clips x\(clips.count)")
+			 Text("Hover (\(hoverCoord.x),\(hoverCoord.y))")
+			 Text("zoom \(trackRenderer.viewMeta.columnWidthPx)")
+			 Text("left \(trackRenderer.viewMeta.leftColumn)")
+			 Spacer()
+			 }
+			 .foregroundStyle(.white)
+			 .background(.blue.opacity(0.5))
+			 .allowsHitTesting(false)
+			 */
+		}
+		.frame(minHeight: renderHeight)
+		.onChange(of: trackRenderer.lastRenderSize)
 		{
 			newSize in
 			self.viewMeta.lastViewSize = newSize
 		}
+		//	record right click pos for context menu
+		//	todo: make this a view modifier
+		.onAppear(perform: {
+			NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) 
+			{
+				print("right mouse down local monitor")
+				self.rightMouseDownLocation = $0.locationInWindow
+				CacheContextMenu(rightMousePos: $0.locationInWindow)
+				return $0
+			}
+		})
+		.contextMenu
+		{
+			//	this is called constantly, so we need to cache a view
+			//	but we need to cache(or rather, invalidate) it here, if it we do it in any other
+			//	callback, it's too late
+			//cachedContextMenu
+			//getContextMenu?( GetClipAt(viewMeta.PixelToCoord(self.rightMouseDownLocation))?.id, viewMeta.PixelToCoord(self.rightMouseDownLocation) )
+			GetAndCacheContextMenu()
+		}
+	}
+	
+	func GetAndCacheContextMenu() -> AnyView
+	{
+		/*
+		NSEvent.mouseLocation
+		NSPoint event_location = [theEvent locationInWindow];
+		NSPoint local_point = [self convertPoint:event_location fromView:nil];
+		NSEvent.mouseLocation
+		 */
+		//NSEvent.locationInWindow
+		//print("Mouse pos \(NSEvent.mouseLocation) right: \(self.rightMouseDownLocation)")
+		//	gr: this rmb location is out of date!
+		let coord = viewMeta.PixelToCoord(self.rightMouseDownLocation)
+		let clipId = GetClipAt(coord)?.id
+		if let cachedContextMenu, cachedContextMenu.0 == clipId && cachedContextMenu.1 == coord
+		{
+			return cachedContextMenu.2
+		}
+
+		let newMenu = getContextMenu?( clipId, coord ) ?? AnyView(EmptyView())
+		Task
+		{
+			@MainActor in
+			self.cachedContextMenu = (clipId,coord,newMenu)
+		}
+		return newMenu
+	}
+	
+	func CacheContextMenu(rightMousePos:NSPoint)
+	{
+		/*
+		//	gr: because this is based on a state, this view modifier gets rebuilt
+		//		with correct info
+		let coord = viewMeta.PixelToCoord(rightMousePos)
+		let clip = GetClipAt(coord)
+		print("Context menu \(coord)")
+		self.cachedContextMenu = getContextMenu?( clip?.id, coord )
+		 */
 	}
 		
 	func OnMarkersChanged()
@@ -497,7 +566,7 @@ public struct ClipTimelineView : View
 	}
 	
 	
-	func OnMouseStateChanged(_ mouseState:MouseState)
+	func OnMouseStateChanged(_ mouseState:MouseState) -> MouseTracking.MouseEventResponse
 	{
 		//	drag view around
 		if mouseState.rightDown
@@ -506,14 +575,23 @@ public struct ClipTimelineView : View
 			let startcoord = viewMeta.PixelToCoord(rightDragStart!.1.x,0)
 			let nowcoord = viewMeta.PixelToCoord(mouseState.position.x,0)
 			let changex = startcoord.x - nowcoord.x
-			//let changex = (rightDragStart!.1.x - mouseState.position.x) / CGFloat(self.trackRenderer.viewMeta.columnWidthPx) 
-			//self.trackRenderer.viewMeta.leftColumn = rightDragStart!.0.leftColumn + changex
 			viewMeta.leftColumn = rightDragStart!.0.leftColumn + changex
+			/*
+			//	todo: only if we did some dragging
+			if changex == 0 
+			{
+				return .InheritedBehaviour
+			}*/
+			return .EventHandled
 		}
-		else
+		else if rightDragStart != nil
 		{
 			rightDragStart = nil
+			return .EventHandled
 		}
+		
+		
+		//	gr: we can drop the empty space callback now that we can let .InheritedBehaviour let events propogate
 		
 		if leftDragStart == nil && mouseState.leftDown
 		{
@@ -531,29 +609,34 @@ public struct ClipTimelineView : View
 				self.onClickedEmptySpace(clickCoord)
 			}
 			leftDragStart = (viewMeta,mouseState.position)
+			return .EventHandled
 		}
 		else if mouseState.leftDown
 		{
 			//	dragging
 			let clickCoord = viewMeta.PixelToCoord(mouseState.position)
 			self.onClickedEmptySpace(clickCoord)
+			return .EventHandled
 		}
 		else if leftDragStart != nil
 		{
 			//	dropped
 			leftDragStart = nil
+			return .EventHandled
 		}
 		
 		self.hoverCoord = self.viewMeta.PixelToCoord(mouseState.position.x, mouseState.position.y)
 		self.hoveredClip = self.GetClipAt(self.hoverCoord)?.id
+		return .InheritedBehaviour
 	}
 	
-	func OnMouseScroll(_ scroll:MouseScrollEvent)
+	func OnMouseScroll(_ scroll:MouseScrollEvent) -> MouseTracking.MouseEventResponse
 	{
 		let zoom = Float(scroll.scrollDelta) * 0.1
 		var columnWidthPx = viewMeta.columnWidthPx + zoom
 		columnWidthPx = clamp( columnWidthPx, min:TimelineViewMeta.minColumnWidthPx, max:TimelineViewMeta.maxColumnWidthPx )
 		viewMeta.columnWidthPx = columnWidthPx
+		return .EventHandled
 	}
 	
 	func GetClipAt(_ timelineCoord:TimelineCoord) -> Clip?
@@ -665,6 +748,11 @@ class RandomClipNotchProducer
 		clipId in
 		//print("Get notches for \(clipId)")
 		return clipId == 12345 ? [clipNotchProducer1.notches,clipNotchProducer2.notches] : []
+	}
+	getContextMenu:
+	{
+		clipUid,coord in
+		AnyView( Text("ClipUid \(clipUid)") )
 	}
 		.overlay
 	{
