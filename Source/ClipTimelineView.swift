@@ -490,7 +490,7 @@ public struct ClipTimelineView : View
 			//	mouse move still not fast enough
 			NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown,.mouseMoved]) 
 			{
-				print("right mouse down local monitor")
+				//print("right mouse down local monitor")
 				self.rightMouseDownLocation = $0.locationInWindow
 				return $0
 			}
