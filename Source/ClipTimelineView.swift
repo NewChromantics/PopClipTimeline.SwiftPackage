@@ -415,8 +415,8 @@ public struct ClipTimelineView : View
 	//	make binding for user?
 	@State var hoverCoord = TimelineCoord(0,0)
 	
-	@State private var rightDragStart : (TimelineViewMeta,CGPoint)? = nil
-	@State private var leftDragStart : (TimelineViewMeta,CGPoint)? = nil
+	@State private var viewDragStart : (TimelineViewMeta,CGPoint)? = nil
+	@State private var selectDragStart : (TimelineViewMeta,CGPoint)? = nil
 	
 	var onClickedEmptySpace : (TimelineCoord)->Void
 	var getClipNotches : (ClipId)->[NotchBatch]
@@ -487,11 +487,11 @@ public struct ClipTimelineView : View
 		//	record right click pos for context menu
 		//	todo: make this a view modifier
 		.onAppear(perform: {
-			NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) 
+			//	mouse move still not fast enough
+			NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown,.mouseMoved]) 
 			{
 				print("right mouse down local monitor")
 				self.rightMouseDownLocation = $0.locationInWindow
-				CacheContextMenu(rightMousePos: $0.locationInWindow)
 				return $0
 			}
 		})
@@ -500,14 +500,13 @@ public struct ClipTimelineView : View
 			//	this is called constantly, so we need to cache a view
 			//	but we need to cache(or rather, invalidate) it here, if it we do it in any other
 			//	callback, it's too late
-			//cachedContextMenu
-			//getContextMenu?( GetClipAt(viewMeta.PixelToCoord(self.rightMouseDownLocation))?.id, viewMeta.PixelToCoord(self.rightMouseDownLocation) )
 			GetAndCacheContextMenu()
 		}
 	}
 	
 	func GetAndCacheContextMenu() -> AnyView
 	{
+		//	todo: get live mouse location, the cached one is too late
 		/*
 		NSEvent.mouseLocation
 		NSPoint event_location = [theEvent locationInWindow];
@@ -533,17 +532,6 @@ public struct ClipTimelineView : View
 		return newMenu
 	}
 	
-	func CacheContextMenu(rightMousePos:NSPoint)
-	{
-		/*
-		//	gr: because this is based on a state, this view modifier gets rebuilt
-		//		with correct info
-		let coord = viewMeta.PixelToCoord(rightMousePos)
-		let clip = GetClipAt(coord)
-		print("Context menu \(coord)")
-		self.cachedContextMenu = getContextMenu?( clip?.id, coord )
-		 */
-	}
 		
 	func OnMarkersChanged()
 	{
@@ -571,31 +559,26 @@ public struct ClipTimelineView : View
 	func OnMouseStateChanged(_ mouseState:MouseState) -> MouseTracking.MouseEventResponse
 	{
 		//	drag view around
-		if mouseState.rightDown
+		if mouseState.middleDown
 		{
-			rightDragStart = rightDragStart ?? (viewMeta,mouseState.position)
-			let startcoord = viewMeta.PixelToCoord(rightDragStart!.1.x,0)
+			viewDragStart = viewDragStart ?? (viewMeta,mouseState.position)
+			let startcoord = viewMeta.PixelToCoord(viewDragStart!.1.x,0)
 			let nowcoord = viewMeta.PixelToCoord(mouseState.position.x,0)
 			let changex = startcoord.x - nowcoord.x
-			viewMeta.leftColumn = rightDragStart!.0.leftColumn + changex
-			/*
-			//	todo: only if we did some dragging
-			if changex == 0 
-			{
-				return .InheritedBehaviour
-			}*/
+			viewMeta.leftColumn = viewDragStart!.0.leftColumn + changex
+
 			return .EventHandled
 		}
-		else if rightDragStart != nil
+		else if viewDragStart != nil
 		{
-			rightDragStart = nil
+			viewDragStart = nil
 			return .EventHandled
 		}
 		
 		
 		//	gr: we can drop the empty space callback now that we can let .InheritedBehaviour let events propogate
 		
-		if leftDragStart == nil && mouseState.leftDown
+		if selectDragStart == nil && mouseState.leftDown
 		{
 			//	first click
 			let clickCoord = viewMeta.PixelToCoord(mouseState.position)
@@ -610,7 +593,7 @@ public struct ClipTimelineView : View
 				self.selectedClip = nil
 				self.onClickedEmptySpace(clickCoord)
 			}
-			leftDragStart = (viewMeta,mouseState.position)
+			selectDragStart = (viewMeta,mouseState.position)
 			return .EventHandled
 		}
 		else if mouseState.leftDown
@@ -620,10 +603,10 @@ public struct ClipTimelineView : View
 			self.onClickedEmptySpace(clickCoord)
 			return .EventHandled
 		}
-		else if leftDragStart != nil
+		else if selectDragStart != nil
 		{
 			//	dropped
-			leftDragStart = nil
+			selectDragStart = nil
 			return .EventHandled
 		}
 		
