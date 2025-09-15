@@ -70,24 +70,6 @@ public extension Collection
 	}
 }
 
-public extension Color
-{
-	var rgba : simd_float4?
-	{
-		let uic = UIColor(self)
-		guard let components = uic.cgColor.components, components.count > 0 else 
-		{
-			return nil
-		}
-
-		//	handle sub-3 component colours (monochrome)
-		let r = components[0]
-		let g = components[safeIndex: 1] ?? r
-		let b = components[safeIndex: 2] ?? r
-		let a = components[safeIndex: 3] ?? 1
-		return simd_float4(Float(r),Float(g),Float(b),Float(a))
-	}
-}
 
 //	match shader
 public struct NotchMeta : Equatable
@@ -209,13 +191,12 @@ struct ClipNotchRenderDescriptor : RenderCommand
 	var vertexBuffer_screenSize = 4
 	static var fragShaderName = "ClipNotchFrag"
 	var fragBuffer_notchMeta = 0
-	
-	init(metalView: MTKView, shaderInBundle: Bundle) throws 
+
+	internal init() 
 	{
-		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
 	}
 	
-	
+
 	func Render(notchBatch:NotchBatch,clip:Clip,trackViewMeta:TimelineViewMeta,metalView: MTKView,viewportSize:CGSize,commandEncoder: any MTLRenderCommandEncoder) throws
 	{
 		var notches = notchBatch.notches
@@ -261,10 +242,9 @@ struct ClipBoxContentRenderDescriptor : RenderCommand
 	static var fragShaderName = "ClipBoxFrag"
 	var fragBuffer_timelineViewMeta = 0
 	
-	init(metalView: MTKView, shaderInBundle: Bundle) throws 
+	
+	init() 
 	{
-		print("ClipBoxContentRenderDescriptor init")
-		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
 	}
 	
 	
@@ -308,11 +288,9 @@ struct MarkerRenderDescriptor : RenderCommand
 	var vertexBuffer_screenSize = 2
 	static var fragShaderName = "MarkerFrag"
 	
-	init(metalView: MTKView, shaderInBundle: Bundle) throws 
+	init() 
 	{
-		try self.initDescriptor(metalView: metalView, shaderInBundle:shaderInBundle)
 	}
-	
 	
 	func Render(markers:[Marker],trackViewMeta:TimelineViewMeta,metalView: MTKView,viewportSize:CGSize,commandEncoder: any MTLRenderCommandEncoder) throws
 	{
