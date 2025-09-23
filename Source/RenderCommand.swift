@@ -40,11 +40,11 @@ public struct MTLRenderDescriptorAndState
 		
 		guard let vertexFunc = shaderLibrary.makeFunction(name: vertexShaderName) else
 		{
-			throw RuntimeError("Missing function \(vertexShaderName)")
+			throw RuntimeError("Missing function \"\(vertexShaderName)\"")
 		}
 		guard let fragFunc = shaderLibrary.makeFunction(name: fragShaderName) else
 		{
-			throw RuntimeError("Missing function \(fragShaderName)")
+			throw RuntimeError("Missing function \"\(fragShaderName)\"")
 		}
 		pipelineDescriptor.vertexFunction = vertexFunc
 		pipelineDescriptor.fragmentFunction = fragFunc		
